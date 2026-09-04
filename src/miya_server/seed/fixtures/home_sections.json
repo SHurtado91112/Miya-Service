@@ -1,0 +1,168 @@
+[
+  {
+    "id": "music",
+    "title": "Music",
+    "items": [
+      {
+        "id": "midnight-city",
+        "kind": "song",
+        "title": "Midnight City",
+        "subtitle": "M83",
+        "systemImage": "music.note",
+        "detail": "From Hurry Up, We're Dreaming (2011). Synth-pop anthem built on a saxophone hook.",
+        "imageURL": "https://picsum.photos/seed/miya-midnight-city/600"
+      },
+      {
+        "id": "redbone",
+        "kind": "song",
+        "title": "Redbone",
+        "subtitle": "Childish Gambino",
+        "systemImage": "music.note",
+        "detail": "Grammy-winning single from Awaken, My Love! (2016). Falsetto funk in 6/8.",
+        "imageURL": "https://picsum.photos/seed/miya-redbone/600"
+      },
+      {
+        "id": "weird-fishes",
+        "kind": "song",
+        "title": "Weird Fishes / Arpeggi",
+        "subtitle": "Radiohead",
+        "systemImage": "music.note",
+        "detail": "Track 4 on In Rainbows (2007). Arpeggiated guitars over a shifting pulse.",
+        "imageURL": "https://picsum.photos/seed/miya-weird-fishes/600",
+        "albumID": "in-rainbows"
+      },
+      {
+        "id": "in-rainbows",
+        "kind": "album",
+        "title": "In Rainbows",
+        "subtitle": "Radiohead",
+        "systemImage": "square.stack",
+        "detail": "Radiohead's seventh studio album, released 2007.",
+        "imageURL": "https://picsum.photos/seed/miya-in-rainbows-album/600"
+      },
+      {
+        "id": "motion-picture-soundtrack",
+        "kind": "song",
+        "title": "Motion Picture Soundtrack",
+        "subtitle": "Radiohead",
+        "systemImage": "music.note",
+        "detail": "Closing track of Kid A (2000). Harmonium, harps, and a long fade.",
+        "imageURL": "https://picsum.photos/seed/miya-motion-picture/600"
+      },
+      {
+        "id": "an-ending-ascent",
+        "kind": "song",
+        "title": "An Ending (Ascent)",
+        "subtitle": "Brian Eno",
+        "systemImage": "music.note",
+        "detail": "From Apollo: Atmospheres & Soundtracks (1983). Slow, weightless pads.",
+        "imageURL": "https://picsum.photos/seed/miya-an-ending/600"
+      },
+      {
+        "id": "pyramid-song",
+        "kind": "song",
+        "title": "Pyramid Song",
+        "subtitle": "Radiohead",
+        "systemImage": "music.note",
+        "detail": "Ondes Martenot and strings over a deceptively simple piano figure.",
+        "imageURL": "https://picsum.photos/seed/miya-pyramid-song/600"
+      },
+      {
+        "id": "flim",
+        "kind": "song",
+        "title": "Flim",
+        "subtitle": "Aphex Twin",
+        "systemImage": "music.note",
+        "detail": "From Come to Daddy (1997). Gentle melody against clipped breakbeats."
+      },
+      {
+        "id": "svefn-g-englar",
+        "kind": "song",
+        "title": "Svefn-g-englar",
+        "subtitle": "Sigur Rós",
+        "systemImage": "music.note",
+        "detail": "From Ágætis byrjun (1999). Bowed guitar, sonar ping, glacial tempo.",
+        "imageURL": "https://picsum.photos/seed/miya-svefn/600"
+      }
+    ]
+  },
+  {
+    "id": "photos",
+    "title": "Photos",
+    "items": [
+      {
+        "id": "sunrise-ridge",
+        "kind": "photo",
+        "title": "Sunrise Ridge",
+        "subtitle": "Yesterday, 6:14 AM",
+        "systemImage": "photo",
+        "detail": "Alpenglow on the east ridge. ISO 100, f/8, 1/125s.",
+        "imageURL": "https://picsum.photos/seed/miya-sunrise-ridge/800/600",
+        "albumID": "yesterday-morning"
+      },
+      {
+        "id": "harbor-fog",
+        "kind": "photo",
+        "title": "Harbor Fog",
+        "subtitle": "Mon, 7:02 AM",
+        "systemImage": "photo",
+        "detail": "Low fog rolling over the marina before the boats woke up.",
+        "imageURL": "https://picsum.photos/seed/miya-harbor-fog/800/600",
+        "albumID": "yesterday-morning"
+      },
+      {
+        "id": "yesterday-morning",
+        "kind": "album",
+        "title": "Yesterday Morning",
+        "subtitle": "4 photos",
+        "systemImage": "square.stack",
+        "detail": "A morning walk from the ridge down to the harbor.",
+        "imageURL": "https://picsum.photos/seed/miya-yesterday-morning-album/800/600"
+      },
+      {
+        "id": "market-stall",
+        "kind": "photo",
+        "title": "Market Stall",
+        "subtitle": "Sat, 10:41 AM",
+        "systemImage": "photo",
+        "detail": "Citrus pyramid at the corner stand. Shot from the hip.",
+        "imageURL": "https://picsum.photos/seed/miya-market-stall/800/600"
+      },
+      {
+        "id": "rain-on-glass",
+        "kind": "photo",
+        "title": "Rain on Glass",
+        "subtitle": "Fri, 4:20 PM",
+        "systemImage": "photo",
+        "detail": "Bokeh streetlights through a wet bus window.",
+        "imageURL": "https://picsum.photos/seed/miya-rain-on-glass/800/600"
+      },
+      {
+        "id": "desert-road",
+        "kind": "photo",
+        "title": "Desert Road",
+        "subtitle": "Last week",
+        "systemImage": "photo",
+        "detail": "Vanishing point on Route 190, heat shimmer at the horizon.",
+        "imageURL": "https://picsum.photos/seed/miya-desert-road/800/600"
+      },
+      {
+        "id": "blue-hour",
+        "kind": "photo",
+        "title": "Blue Hour",
+        "subtitle": "Last week",
+        "systemImage": "photo",
+        "detail": "Skyline ten minutes after sunset, tripod, 4s exposure.",
+        "imageURL": "https://picsum.photos/seed/miya-blue-hour/800/600"
+      },
+      {
+        "id": "forest-path",
+        "kind": "photo",
+        "title": "Forest Path",
+        "subtitle": "Two weeks ago",
+        "systemImage": "photo",
+        "detail": "Backlit ferns along the lower loop trail."
+      }
+    ]
+  }
+]

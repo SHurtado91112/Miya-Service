@@ -1,0 +1,19 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
+
+# Environment / secrets
+.env
+
+# Local media storage (self-hosted files, not checked into git)
+media/*
+!media/songs/.gitkeep
+!media/photos/.gitkeep
+!media/albums/.gitkeep

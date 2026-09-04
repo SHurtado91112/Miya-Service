@@ -1,0 +1,100 @@
+[
+  {
+    "id": "in-rainbows",
+    "title": "In Rainbows",
+    "subtitle": "Radiohead",
+    "systemImage": "square.stack",
+    "imageURL": "https://picsum.photos/seed/miya-in-rainbows-album/600",
+    "items": [
+      {
+        "id": "15-step",
+        "kind": "song",
+        "title": "15 Step",
+        "subtitle": "Radiohead",
+        "systemImage": "music.note",
+        "detail": "Opening track of In Rainbows (2007). Handclaps over a 5/4 breakbeat.",
+        "imageURL": "https://picsum.photos/seed/miya-15-step/600",
+        "albumID": "in-rainbows"
+      },
+      {
+        "id": "weird-fishes",
+        "kind": "song",
+        "title": "Weird Fishes / Arpeggi",
+        "subtitle": "Radiohead",
+        "systemImage": "music.note",
+        "detail": "Track 4 on In Rainbows (2007). Arpeggiated guitars over a shifting pulse.",
+        "imageURL": "https://picsum.photos/seed/miya-weird-fishes/600",
+        "albumID": "in-rainbows"
+      },
+      {
+        "id": "reckoner",
+        "kind": "song",
+        "title": "Reckoner",
+        "subtitle": "Radiohead",
+        "systemImage": "music.note",
+        "detail": "Falsetto lead over a rolling, off-kilter drum pattern.",
+        "imageURL": "https://picsum.photos/seed/miya-reckoner/600",
+        "albumID": "in-rainbows"
+      },
+      {
+        "id": "jigsaw-falling-into-place",
+        "kind": "song",
+        "title": "Jigsaw Falling Into Place",
+        "subtitle": "Radiohead",
+        "systemImage": "music.note",
+        "detail": "Acoustic strum building into a full-band motorik drive.",
+        "imageURL": "https://picsum.photos/seed/miya-jigsaw/600",
+        "albumID": "in-rainbows"
+      }
+    ]
+  },
+  {
+    "id": "yesterday-morning",
+    "title": "Yesterday Morning",
+    "subtitle": "4 photos",
+    "systemImage": "square.stack",
+    "imageURL": "https://picsum.photos/seed/miya-yesterday-morning-album/800/600",
+    "items": [
+      {
+        "id": "sunrise-ridge",
+        "kind": "photo",
+        "title": "Sunrise Ridge",
+        "subtitle": "Yesterday, 6:14 AM",
+        "systemImage": "photo",
+        "detail": "Alpenglow on the east ridge. ISO 100, f/8, 1/125s.",
+        "imageURL": "https://picsum.photos/seed/miya-sunrise-ridge/800/600",
+        "albumID": "yesterday-morning"
+      },
+      {
+        "id": "trailhead-mist",
+        "kind": "photo",
+        "title": "Trailhead Mist",
+        "subtitle": "Yesterday, 6:32 AM",
+        "systemImage": "photo",
+        "detail": "Mist still pooled in the switchbacks on the way down.",
+        "imageURL": "https://picsum.photos/seed/miya-trailhead-mist/800/600",
+        "albumID": "yesterday-morning"
+      },
+      {
+        "id": "coastal-road",
+        "kind": "photo",
+        "title": "Coastal Road",
+        "subtitle": "Yesterday, 6:51 AM",
+        "systemImage": "photo",
+        "detail": "First light on the switchback road down to the harbor.",
+        "imageURL": "https://picsum.photos/seed/miya-coastal-road/800/600",
+        "albumID": "yesterday-morning"
+      },
+      {
+        "id": "harbor-fog",
+        "kind": "photo",
+        "title": "Harbor Fog",
+        "subtitle": "Yesterday, 7:02 AM",
+        "systemImage": "photo",
+        "detail": "Low fog rolling over the marina before the boats woke up.",
+        "imageURL": "https://picsum.photos/seed/miya-harbor-fog/800/600",
+        "albumID": "yesterday-morning"
+      }
+    ]
+  }
+]
