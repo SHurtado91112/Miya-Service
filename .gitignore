@@ -12,6 +12,9 @@ wheels/
 # Environment / secrets
 .env
 
+# mkcert certs for LAN/device testing (machine + IP specific)
+certs/
+
 # Local media storage (self-hosted files, not checked into git)
 media/*
 !media/songs/.gitkeep
