@@ -8,6 +8,7 @@ dependencies = [
     "alembic>=1.19.2",
     "asyncpg>=0.31.0",
     "fastapi>=0.141.1",
+    "pillow>=12.3.0",
     "pydantic-settings>=2.15.0",
     "python-multipart>=0.0.32",
     "sqlalchemy>=2.0",
@@ -17,6 +18,7 @@ dependencies = [
 
 [project.scripts]
 seed = "miya_server.seed.seed_data:main"
+ingest-media = "miya_server.media.ingest:main"
 
 [build-system]
 requires = ["uv_build>=0.12.9,<0.13.0"]
@@ -32,4 +34,6 @@ dev = [
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "session"
+asyncio_default_test_loop_scope = "session"
 testpaths = ["tests"]

@@ -9,10 +9,10 @@ architecture plan.
 
 - Python 3.12 (managed automatically by `uv`)
 - [`uv`](https://docs.astral.sh/uv/) — installed here via `curl -LsSf https://astral.sh/uv/install.sh | sh`
-- Docker (for the local Postgres via `docker-compose.yml`) — **not currently installed
-  in this dev environment**. Install Docker Desktop, or point `DATABASE_URL` at any
-  Postgres 13+ instance you already have running (Postgres.app, a Homebrew install
-  once fixed, a remote dev DB, etc).
+- Docker Desktop, for the local Postgres via `docker-compose.yml`. If `docker`/
+  `docker compose` aren't found after installing, its CLI lives in `~/.docker/bin`
+  — add that to your `PATH` (already done for this machine's `~/.zshrc` and
+  `~/.bash_profile`).
 
 ## Local setup
 
@@ -28,7 +28,26 @@ Or just run `scripts/dev.sh`, which does all of the above.
 
 - Health check: `GET /health`
 - GraphQL API: `/graphql` (GraphiQL UI in the browser, e.g. `sections { title items { __typename ... on Song { title } ... on Photo { title } ... on Album { title } } }`)
-- Media files (Phase 3): `/media/{file_id}` — not yet implemented
+- Media files: `GET /media/{file_id}` — streams a self-hosted file (range-request
+  support for audio scrubbing, long-lived cache headers since content is immutable)
+
+### Ingesting real media
+
+Once you have actual audio/photo files locally, match them to seeded rows by
+filename (the stem must equal the item's or album's slug, e.g.
+`weird-fishes.mp3`, `sunrise-ridge.jpg`, `in-rainbows.jpg` for an album cover):
+
+```bash
+uv run ingest-media --dir /path/to/your/media/files
+```
+
+This copies each file into `MEDIA_ROOT` (content-addressed by checksum — an
+unchanged file re-ingests as a no-op; a changed one gets a new row rather than
+overwriting in place), creates/reuses a `media_files` row, and backfills
+`media_items.primary_media_file_id`, `songs.audio_file_id`,
+`photos.image_file_id` (+ denormalized `photos.width`/`height`), or
+`albums.cover_media_file_id` as appropriate. GraphQL `imageUrl`/`audioUrl`
+fields then resolve to real `/media/{file_id}` URLs automatically.
 
 ## Tests
 
@@ -38,9 +57,9 @@ uv run pytest
 
 Tests are split so they still run without a database:
 - `test_health.py`, `test_graphql_schema.py` — no DB required, always run.
-- `test_graphql_sections.py`, `test_graphql_albums.py` — require Postgres; they
-  auto-skip if `DATABASE_URL` isn't reachable, and seed the DB from the fixtures
-  once (session-scoped) when it is.
+- `test_graphql_sections.py`, `test_graphql_albums.py`, `test_media_router.py` —
+  require Postgres; they auto-skip if `DATABASE_URL` isn't reachable, and seed the
+  DB from the fixtures once (session-scoped) when it is.
 
 ## Project layout
 
@@ -62,5 +81,10 @@ See the plan doc above for the full rationale. Summary:
 - `src/miya_server/repositories/` — query layer between GraphQL resolvers and
   SQLAlchemy; batches song/photo/album lookups per section or album instead of
   querying per item.
-- `src/miya_server/media/` — media URL helper only so far; the actual file-serving
-  route is Phase 3.
+- `src/miya_server/media/` — `router.py` (`GET /media/{file_id}`), `storage.py`
+  (media URL construction), `ingest.py` (the `ingest-media` CLI).
+
+## Not yet built (Phase 4 of the plan)
+
+Search (`pg_trgm`-backed `searchMedia`), pagination, many-to-many album
+membership, mutations/auth.
