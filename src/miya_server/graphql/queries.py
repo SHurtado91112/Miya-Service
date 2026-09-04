@@ -1,8 +1,10 @@
 import strawberry
 
 from miya_server.graphql.types.album import Album, build_album
+from miya_server.graphql.types.media_item import MediaItem, build_media_entries
 from miya_server.graphql.types.section import Section, build_section_entries
 from miya_server.repositories import albums as albums_repo
+from miya_server.repositories import media_items as media_items_repo
 from miya_server.repositories import sections as sections_repo
 
 
@@ -44,3 +46,9 @@ class Query:
         session = info.context.session
         db_album = await albums_repo.get_album_by_slug(session, slug)
         return build_album(db_album) if db_album else None
+
+    @strawberry.field
+    async def search_media(self, info: strawberry.Info, query: str) -> list[MediaItem]:
+        session = info.context.session
+        db_items = await media_items_repo.search_media_items(session, query)
+        return await build_media_entries(session, db_items)

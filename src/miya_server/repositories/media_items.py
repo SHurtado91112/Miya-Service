@@ -1,6 +1,6 @@
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from miya_server.db.models import MediaItem, Photo, Song
@@ -25,3 +25,33 @@ async def get_photos_map(session: AsyncSession, media_item_ids: list[UUID]) -> d
         return {}
     result = await session.execute(select(Photo).where(Photo.media_item_id.in_(media_item_ids)))
     return {photo.media_item_id: photo for photo in result.scalars().all()}
+
+
+async def search_media_items(session: AsyncSession, query: str, limit: int = 20) -> list[MediaItem]:
+    """Fuzzy/typo-tolerant search over title, subtitle, and (for songs) artist,
+    backed by the pg_trgm GIN indexes -- the `%` operator applies pg_trgm's
+    default similarity threshold (0.3), and results are ranked by best match."""
+    query = query.strip()
+    if not query:
+        return []
+
+    best_similarity = func.greatest(
+        func.similarity(MediaItem.title, query),
+        func.similarity(MediaItem.subtitle, query),
+        func.similarity(func.coalesce(Song.artist, ""), query),
+    )
+    stmt = (
+        select(MediaItem)
+        .outerjoin(Song, Song.media_item_id == MediaItem.id)
+        .where(
+            or_(
+                MediaItem.title.op("%")(query),
+                MediaItem.subtitle.op("%")(query),
+                Song.artist.op("%")(query),
+            )
+        )
+        .order_by(best_similarity.desc())
+        .limit(limit)
+    )
+    result = await session.execute(stmt)
+    return list(result.scalars().unique().all())

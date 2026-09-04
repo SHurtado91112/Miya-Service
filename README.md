@@ -28,6 +28,10 @@ Or just run `scripts/dev.sh`, which does all of the above.
 
 - Health check: `GET /health`
 - GraphQL API: `/graphql` (GraphiQL UI in the browser, e.g. `sections { title items { __typename ... on Song { title } ... on Photo { title } ... on Album { title } } }`)
+- Search: `searchMedia(query: String!): [MediaItem!]!` — fuzzy/typo-tolerant, backed
+  by `pg_trgm` GIN indexes on title/subtitle/artist, e.g.
+  `searchMedia(query: "raidhead") { __typename title ... on Song { artist } } }`
+  correctly matches all the seeded Radiohead songs despite the typo.
 - Media files: `GET /media/{file_id}` — streams a self-hosted file (range-request
   support for audio scrubbing, long-lived cache headers since content is immutable)
 
@@ -57,9 +61,10 @@ uv run pytest
 
 Tests are split so they still run without a database:
 - `test_health.py`, `test_graphql_schema.py` — no DB required, always run.
-- `test_graphql_sections.py`, `test_graphql_albums.py`, `test_media_router.py` —
-  require Postgres; they auto-skip if `DATABASE_URL` isn't reachable, and seed the
-  DB from the fixtures once (session-scoped) when it is.
+- `test_graphql_sections.py`, `test_graphql_albums.py`, `test_media_router.py`,
+  `test_graphql_search.py` — require Postgres; they auto-skip if `DATABASE_URL`
+  isn't reachable, and seed the DB from the fixtures once (session-scoped) when it
+  is.
 
 ## Project layout
 
@@ -84,7 +89,7 @@ See the plan doc above for the full rationale. Summary:
 - `src/miya_server/media/` — `router.py` (`GET /media/{file_id}`), `storage.py`
   (media URL construction), `ingest.py` (the `ingest-media` CLI).
 
-## Not yet built (Phase 4 of the plan)
+## Not yet built
 
-Search (`pg_trgm`-backed `searchMedia`), pagination, many-to-many album
-membership, mutations/auth.
+Pagination and many-to-many album membership (skipped until the library grows
+enough to need them), and mutations/auth (deferred until real auth is designed).
