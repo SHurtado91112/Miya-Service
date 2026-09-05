@@ -42,8 +42,16 @@ async def test_search_exact_title_match(client):
 async def test_search_by_artist_matches_songs_and_author(client):
     data = await _search(client, "Radiohead")
     titles = {e["node"]["title"] for e in data["entries"]["edges"]}
+    album_slugs = {
+        e["node"]["slug"]
+        for e in data["entries"]["edges"]
+        if e["node"]["__typename"] == "Album"
+    }
+    # "In Rainbows" (subtitle "Radiohead") matches, so its members fold into the
+    # album card; a Radiohead track with no album stays as its own row.
     assert "Pyramid Song" in titles
-    assert "Weird Fishes / Arpeggi" in titles
+    assert "Weird Fishes / Arpeggi" not in titles
+    assert "in-rainbows" in album_slugs
     # The Radiohead author is surfaced alongside the entries.
     assert any(a["slug"] == "radiohead" for a in data["authors"])
 
@@ -54,10 +62,21 @@ async def test_search_tolerates_typo(client):
     assert "Redbone" in titles
 
 
-async def test_search_matches_by_parent_album_title(client):
-    # "Weird Fishes / Arpeggi" doesn't contain "rainbows" -- it matches because
-    # its parent album is "In Rainbows".
+async def test_search_folds_members_into_matched_album(client):
+    # "In Rainbows" matches "rainbows"; its members (e.g. "weird-fishes") fold
+    # into the album card rather than appearing as their own rows.
     data = await _search(client, "rainbows")
+    slugs_by_type: dict[str, set[str]] = {}
+    for e in data["entries"]["edges"]:
+        slugs_by_type.setdefault(e["node"]["__typename"], set()).add(e["node"]["slug"])
+    assert "in-rainbows" in slugs_by_type.get("Album", set())
+    assert "weird-fishes" not in slugs_by_type.get("Song", set())
+
+
+async def test_search_returns_bare_song_when_its_album_is_not_a_match(client):
+    # "weird fishes" matches the song's own title but not its album "In Rainbows",
+    # so the song is returned directly (nothing to fold it into).
+    data = await _search(client, "weird fishes")
     songs = {
         e["node"]["slug"]
         for e in data["entries"]["edges"]
@@ -68,12 +87,14 @@ async def test_search_matches_by_parent_album_title(client):
 
 async def test_search_returns_album_cards(client):
     data = await _search(client, "In Rainbows")
-    albums = {
-        e["node"]["slug"]
-        for e in data["entries"]["edges"]
-        if e["node"]["__typename"] == "Album"
-    }
-    assert "in-rainbows" in albums
+    slugs_by_type: dict[str, set[str]] = {}
+    for e in data["entries"]["edges"]:
+        slugs_by_type.setdefault(e["node"]["__typename"], set()).add(e["node"]["slug"])
+    assert "in-rainbows" in slugs_by_type.get("Album", set())
+    # Members are folded away, not listed alongside the card.
+    assert slugs_by_type.get("Song", set()).isdisjoint(
+        {"15-step", "weird-fishes", "reckoner", "jigsaw-falling-into-place"}
+    )
 
 
 async def test_search_photos_have_the_synthetic_photographer(client):
