@@ -18,6 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from miya_server.db.base import async_session_factory
 from miya_server.db.models import Album, MediaItem, Photo, Section, Song
 from miya_server.db.models.associations import section_albums, section_items
+from miya_server.seed.authors import get_or_create_author, get_or_create_photographer
 
 FIXTURES_DIR = Path(__file__).parent / "fixtures"
 
@@ -53,6 +54,20 @@ async def _upsert_media_item(
     item.detail = data.get("detail", "")
     if album_id is not None:
         item.album_id = album_id
+
+    # Author: an explicit `author.name` in the fixture wins; a song otherwise
+    # falls back to its `subtitle` (the artist string); a photo falls back to
+    # the single synthetic photographer.
+    author_name = (data.get("author") or {}).get("name", "").strip()
+    if author_name:
+        author = await get_or_create_author(session, author_name)
+    elif kind == "song":
+        author = await get_or_create_author(session, data.get("subtitle", ""))
+    elif kind == "photo":
+        author = await get_or_create_photographer(session)
+    else:
+        author = None
+    item.author_id = author.id if author is not None else None
     await session.flush()
 
     if kind == "song":

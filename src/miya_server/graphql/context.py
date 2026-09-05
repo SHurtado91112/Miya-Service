@@ -11,8 +11,9 @@ from strawberry.dataloader import DataLoader
 from strawberry.fastapi import BaseContext
 
 from miya_server.db.base import get_session
-from miya_server.db.models import Album
+from miya_server.db.models import Album, Author
 from miya_server.repositories.albums import batch_get_albums
+from miya_server.repositories.authors import batch_get_authors
 
 
 class SerializedSession:
@@ -35,6 +36,7 @@ class SerializedSession:
 class GraphQLContext(BaseContext):
     session: SerializedSession
     album_loader: DataLoader[UUID, Album | None]
+    author_loader: DataLoader[UUID, Author | None]
 
 
 async def get_context(session: AsyncSession = Depends(get_session)) -> GraphQLContext:  # noqa: B008
@@ -42,4 +44,5 @@ async def get_context(session: AsyncSession = Depends(get_session)) -> GraphQLCo
     return GraphQLContext(
         session=serialized_session,
         album_loader=DataLoader(load_fn=lambda ids: batch_get_albums(serialized_session, ids)),
+        author_loader=DataLoader(load_fn=lambda ids: batch_get_authors(serialized_session, ids)),
     )
