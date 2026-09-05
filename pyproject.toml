@@ -19,6 +19,7 @@ dependencies = [
 [project.scripts]
 seed = "miya_server.seed.seed_data:main"
 ingest-media = "miya_server.media.ingest:main"
+generate-bulk-data = "miya_server.seed.bulk_generate:main"
 
 [build-system]
 requires = ["uv_build>=0.12.9,<0.13.0"]
