@@ -17,6 +17,10 @@ To undo the Home-section wiring (remove the legacy erroneous "bulk-music" /
 "bulk-photos" sections and their link rows) without touching the generated
 corpus:
     uv run generate-bulk-data --clean
+
+To (re)link a bounded, deterministic sample of an already-generated bulk corpus
+into the curated "music" / "photos" sections without regenerating anything:
+    uv run generate-bulk-data --relink-sections
 """
 
 import argparse
@@ -29,6 +33,7 @@ from pathlib import Path
 from PIL import Image, ImageDraw
 from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from miya_server.db.base import async_session_factory
 from miya_server.db.models import Album, MediaItem, Photo, Section, Song
@@ -228,78 +233,158 @@ async def _generate(
             f"{len(all_photo_slugs)} photos across {len(all_photo_album_slugs)} albums."
         )
 
-        # Link a bounded sample into the EXISTING curated Home sections so the UI
-        # stays usable. Songs -> "music", photos -> "photos". These sections are
-        # created by `uv run seed`; if the base seed has not been run we create
-        # them with plain slugs/titles (never "bulk-*").
-        for kind, item_slugs, album_slugs in (
-            ("song", all_song_slugs, all_song_album_slugs),
-            ("photo", all_photo_slugs, all_photo_album_slugs),
-        ):
-            section_slug, fallback_title, fallback_sort = TARGET_SECTIONS[kind]
-            section_row = (
-                await session.execute(select(Section).where(Section.slug == section_slug))
-            ).scalar_one_or_none()
-            if section_row is None:
-                section_row = Section(
-                    slug=section_slug, title=fallback_title, sort_order=fallback_sort
-                )
-                session.add(section_row)
-                await session.flush()
-            section_id = section_row.id
-
-            sampled_items = rng.sample(item_slugs, min(section_item_sample, len(item_slugs)))
-            sampled_albums = rng.sample(album_slugs, min(section_album_sample, len(album_slugs)))
-
-            # The base seed already populates these sections with low sort_order
-            # values -- append after the current max so we don't collide.
-            item_base = (
-                await session.execute(
-                    select(func.coalesce(func.max(section_items.c.sort_order), -1) + 1).where(
-                        section_items.c.section_id == section_id
-                    )
-                )
-            ).scalar_one()
-            album_base = (
-                await session.execute(
-                    select(func.coalesce(func.max(section_albums.c.sort_order), -1) + 1).where(
-                        section_albums.c.section_id == section_id
-                    )
-                )
-            ).scalar_one()
-
-            items = (
-                await session.execute(MediaItem.__table__.select().where(MediaItem.slug.in_(sampled_items)))
-            ).fetchall()
-            for offset, row in enumerate(items):
-                await session.execute(
-                    pg_insert(section_items)
-                    .values(
-                        section_id=section_id,
-                        media_item_id=row.id,
-                        sort_order=item_base + offset,
-                    )
-                    .on_conflict_do_nothing()
-                )
-
-            albums = (
-                await session.execute(Album.__table__.select().where(Album.slug.in_(sampled_albums)))
-            ).fetchall()
-            for offset, row in enumerate(albums):
-                await session.execute(
-                    pg_insert(section_albums)
-                    .values(
-                        section_id=section_id,
-                        album_id=row.id,
-                        sort_order=album_base + offset,
-                    )
-                    .on_conflict_do_nothing()
-                )
-
+        # Link a bounded, deterministic sample of the corpus into the curated
+        # "music" / "photos" Home sections (songs -> music, photos -> photos).
+        # Shared with the `--relink-sections` entrypoint below.
+        await _link_bulk_sample_into_sections(
+            session,
+            section_item_sample=section_item_sample,
+            section_album_sample=section_album_sample,
+            seed=seed,
+        )
         await session.commit()
         print("Linked sample into existing Home sections 'music' and 'photos'.")
         print(f"Wrote placeholder media source files to {media_dir}/")
         print(f"Next: uv run ingest-media --dir {media_dir}")
+
+
+# Album-slug prefixes the bulk generator uses, per media kind.
+_BULK_ALBUM_SLUG_PREFIX = {"song": "bulk-song-album-", "photo": "bulk-photo-album-"}
+
+
+async def _link_bulk_sample_into_sections(
+    session: AsyncSession,
+    *,
+    section_item_sample: int,
+    section_album_sample: int,
+    seed: int,
+) -> dict[str, dict[str, int]]:
+    """Sample a bounded, deterministic slice of the existing ``bulk-*`` corpus
+    already in the DB and link it into the curated "music" / "photos" Home
+    sections (songs -> "music", photos -> "photos").
+
+    Never creates or regenerates albums / media_items -- it only reads
+    ``bulk-``-prefixed rows and inserts ``section_items`` / ``section_albums``.
+    The "music" / "photos" sections are looked up by slug; if the base seed has
+    not been run they are created with plain slugs/titles (never ``bulk-*``).
+    Bulk rows are appended after the current ``MAX(sort_order)`` for the section
+    so they sort after the base-seed links, and every insert is
+    ``ON CONFLICT DO NOTHING`` -- so re-running with the same ``seed`` is a
+    no-op. Does not commit; the caller owns the transaction.
+
+    Returns ``{section_slug: {"items_added": n, "albums_added": n}}``.
+    """
+    rng = random.Random(seed)
+    summary: dict[str, dict[str, int]] = {}
+
+    for kind in ("song", "photo"):
+        section_slug, fallback_title, fallback_sort = TARGET_SECTIONS[kind]
+        section_row = (
+            await session.execute(select(Section).where(Section.slug == section_slug))
+        ).scalar_one_or_none()
+        if section_row is None:
+            section_row = Section(
+                slug=section_slug, title=fallback_title, sort_order=fallback_sort
+            )
+            session.add(section_row)
+            await session.flush()
+        section_id = section_row.id
+
+        # Stable ordering (by slug) before sampling so the same seed always
+        # yields the same picks regardless of DB row order.
+        item_rows = (
+            await session.execute(
+                select(MediaItem.id, MediaItem.slug)
+                .where(MediaItem.kind == kind, MediaItem.slug.like("bulk-%"))
+                .order_by(MediaItem.slug)
+            )
+        ).all()
+        album_rows = (
+            await session.execute(
+                select(Album.id, Album.slug)
+                .where(Album.slug.like(f"{_BULK_ALBUM_SLUG_PREFIX[kind]}%"))
+                .order_by(Album.slug)
+            )
+        ).all()
+
+        sampled_items = rng.sample(item_rows, min(section_item_sample, len(item_rows)))
+        sampled_albums = rng.sample(album_rows, min(section_album_sample, len(album_rows)))
+
+        # The base seed populates these sections with low sort_order values --
+        # append after the current max so bulk samples sort after them.
+        item_base = (
+            await session.execute(
+                select(func.coalesce(func.max(section_items.c.sort_order), -1) + 1).where(
+                    section_items.c.section_id == section_id
+                )
+            )
+        ).scalar_one()
+        album_base = (
+            await session.execute(
+                select(func.coalesce(func.max(section_albums.c.sort_order), -1) + 1).where(
+                    section_albums.c.section_id == section_id
+                )
+            )
+        ).scalar_one()
+
+        items_added = 0
+        for offset, row in enumerate(sampled_items):
+            result = await session.execute(
+                pg_insert(section_items)
+                .values(
+                    section_id=section_id,
+                    media_item_id=row.id,
+                    sort_order=item_base + offset,
+                )
+                .on_conflict_do_nothing()
+            )
+            items_added += result.rowcount
+
+        albums_added = 0
+        for offset, row in enumerate(sampled_albums):
+            result = await session.execute(
+                pg_insert(section_albums)
+                .values(
+                    section_id=section_id,
+                    album_id=row.id,
+                    sort_order=album_base + offset,
+                )
+                .on_conflict_do_nothing()
+            )
+            albums_added += result.rowcount
+
+        summary[section_slug] = {"items_added": items_added, "albums_added": albums_added}
+
+    return summary
+
+
+async def _relink_sections(
+    *,
+    section_item_sample: int,
+    section_album_sample: int,
+    seed: int,
+) -> None:
+    """Standalone, idempotent entrypoint (``--relink-sections``): link a bounded
+    deterministic sample of the existing ``bulk-*`` corpus into the "music" /
+    "photos" Home sections. Regenerates nothing.
+    """
+    async with async_session_factory() as session:
+        summary = await _link_bulk_sample_into_sections(
+            session,
+            section_item_sample=section_item_sample,
+            section_album_sample=section_album_sample,
+            seed=seed,
+        )
+        await session.commit()
+
+    for section_slug, counts in summary.items():
+        print(
+            f"{section_slug}: +{counts['items_added']} section_items, "
+            f"+{counts['albums_added']} section_albums"
+        )
+    if all(c["items_added"] == 0 and c["albums_added"] == 0 for c in summary.values()):
+        print("(no new rows -- sections already hold this sample)")
+    print("Relink complete.")
 
 
 async def _clean() -> None:
@@ -375,6 +460,17 @@ def main() -> None:
             "media_items untouched."
         ),
     )
+    parser.add_argument(
+        "--relink-sections",
+        action="store_true",
+        help=(
+            "Link a bounded, deterministic sample of the EXISTING bulk-* corpus "
+            "into the 'music' / 'photos' sections (songs -> music, photos -> "
+            "photos), then exit. Regenerates nothing. Idempotent for a given "
+            "--seed / --section-*-sample. Uses --section-item-sample, "
+            "--section-album-sample, --seed."
+        ),
+    )
     parser.add_argument("--song-albums", type=int, default=250)
     parser.add_argument("--songs-per-album", type=int, default=10)
     parser.add_argument("--photo-albums", type=int, default=250)
@@ -389,6 +485,16 @@ def main() -> None:
 
     if args.clean:
         asyncio.run(_clean())
+        return
+
+    if args.relink_sections:
+        asyncio.run(
+            _relink_sections(
+                section_item_sample=args.section_item_sample,
+                section_album_sample=args.section_album_sample,
+                seed=args.seed,
+            )
+        )
         return
 
     asyncio.run(
