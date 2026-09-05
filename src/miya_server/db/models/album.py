@@ -1,6 +1,6 @@
 import uuid
 
-from sqlalchemy import ForeignKey, String
+from sqlalchemy import ForeignKey, Index, String
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -10,6 +10,7 @@ from miya_server.db.models.mixins import TimestampMixin, UUIDPrimaryKeyMixin
 
 class Album(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "albums"
+    __table_args__ = (Index("ix_albums_title_id", "title", "id"),)
 
     slug: Mapped[str] = mapped_column(String, unique=True, nullable=False)
     title: Mapped[str] = mapped_column(String, nullable=False)

@@ -1,11 +1,20 @@
 import strawberry
+from strawberry import relay
 
-from miya_server.graphql.types.album import Album, build_album
+from miya_server.graphql.pagination import (
+    build_connection,
+    clamp_first,
+    decode_cursor,
+    reject_backward,
+)
+from miya_server.graphql.types.album import Album, AlbumConnection, build_album
 from miya_server.graphql.types.media_item import MediaItem, build_media_entries
 from miya_server.graphql.types.section import Section, build_section_entries
 from miya_server.repositories import albums as albums_repo
 from miya_server.repositories import media_items as media_items_repo
 from miya_server.repositories import sections as sections_repo
+
+_ALBUM_CURSOR_PREFIX = "album"
 
 
 async def _build_section(session, db_section) -> Section:
@@ -21,6 +30,8 @@ async def _build_section(session, db_section) -> Section:
 
 @strawberry.type
 class Query:
+    node: relay.Node = relay.node()
+
     @strawberry.field
     async def sections(self, info: strawberry.Info) -> list[Section]:
         session = info.context.session
@@ -36,10 +47,39 @@ class Query:
         return await _build_section(session, db_section)
 
     @strawberry.field
-    async def albums(self, info: strawberry.Info) -> list[Album]:
+    async def albums(
+        self,
+        info: strawberry.Info,
+        first: int | None = None,
+        after: str | None = None,
+        last: int | None = None,
+        before: str | None = None,
+    ) -> AlbumConnection:
+        reject_backward(last, before)
+        limit = clamp_first(first)
+        after_key = (
+            decode_cursor(_ALBUM_CURSOR_PREFIX, after) if after is not None else None
+        )
         session = info.context.session
-        db_albums = await albums_repo.list_albums(session)
-        return [build_album(db_album) for db_album in db_albums]
+
+        rows = await albums_repo.list_albums_page(
+            session,
+            limit=limit + 1,
+            after_title=after_key[0] if after_key else None,
+            after_id=after_key[1] if after_key else None,
+        )
+        has_next_page = len(rows) > limit
+        page = rows[:limit]
+
+        return build_connection(
+            AlbumConnection,
+            page,
+            prefix=_ALBUM_CURSOR_PREFIX,
+            after=after,
+            has_next_page=has_next_page,
+            key=lambda row: (row.title, row.id),
+            node=build_album,
+        )
 
     @strawberry.field
     async def album(self, info: strawberry.Info, slug: str) -> Album | None:

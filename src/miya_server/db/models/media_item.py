@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import CheckConstraint, ForeignKey, Integer, Numeric, String
+from sqlalchemy import CheckConstraint, ForeignKey, Index, Integer, Numeric, String
 from sqlalchemy.dialects.postgresql import TIMESTAMP, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -15,7 +15,10 @@ class MediaItem(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     the GraphQL layer (SectionEntry union), not in this table."""
 
     __tablename__ = "media_items"
-    __table_args__ = (CheckConstraint("kind IN ('song', 'photo')", name="media_items_kind_check"),)
+    __table_args__ = (
+        CheckConstraint("kind IN ('song', 'photo')", name="media_items_kind_check"),
+        Index("ix_media_items_album_id_title_id", "album_id", "title", "id"),
+    )
 
     slug: Mapped[str] = mapped_column(String, unique=True, nullable=False)
     kind: Mapped[str] = mapped_column(String, nullable=False)

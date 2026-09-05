@@ -1,16 +1,46 @@
 from uuid import UUID
 
-from sqlalchemy import func, or_, select
+from sqlalchemy import func, or_, select, tuple_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from miya_server.db.models import MediaItem, Photo, Song
 
 
-async def list_media_items_for_album(session: AsyncSession, album_id: UUID) -> list[MediaItem]:
-    result = await session.execute(
-        select(MediaItem).where(MediaItem.album_id == album_id).order_by(MediaItem.title)
+async def list_media_items_for_album_page(
+    session: AsyncSession,
+    album_id: UUID,
+    *,
+    limit: int,
+    after_title: str | None = None,
+    after_id: UUID | None = None,
+) -> list[MediaItem]:
+    """One keyset page of an album's items ordered by (title, id)."""
+    stmt = (
+        select(MediaItem)
+        .where(MediaItem.album_id == album_id)
+        .order_by(MediaItem.title.asc(), MediaItem.id.asc())
+        .limit(limit)
     )
+    if after_title is not None and after_id is not None:
+        stmt = stmt.where(tuple_(MediaItem.title, MediaItem.id) > (after_title, after_id))
+    result = await session.execute(stmt)
     return list(result.scalars().all())
+
+
+async def count_media_items_for_album(session: AsyncSession, album_id: UUID) -> int:
+    result = await session.execute(
+        select(func.count()).select_from(MediaItem).where(MediaItem.album_id == album_id)
+    )
+    return int(result.scalar_one())
+
+
+async def batch_get_media_items(
+    session: AsyncSession, ids: list[UUID]
+) -> list[MediaItem | None]:
+    """Order-preserving batch fetch for relay Node resolution."""
+    result = await session.execute(select(MediaItem).where(MediaItem.id.in_(ids)))
+    by_id = {item.id: item for item in result.scalars().all()}
+    return [by_id.get(item_id) for item_id in ids]
 
 
 async def get_songs_map(session: AsyncSession, media_item_ids: list[UUID]) -> dict[UUID, Song]:

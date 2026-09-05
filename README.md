@@ -28,6 +28,11 @@ Or just run `scripts/dev.sh`, which does all of the above.
 
 - Health check: `GET /health`
 - GraphQL API: `/graphql` (GraphiQL UI in the browser, e.g. `sections { title items { __typename ... on Song { title } ... on Photo { title } ... on Album { title } } }`)
+- Pagination: `albums` and `Album.items` are Relay connections — forward-only
+  (`first` / `after`), opaque `(title, id)` keyset cursors, page size capped at 100.
+  e.g. `albums(first: 20) { totalCount pageInfo { hasNextPage endCursor } edges { cursor node { slug items(first: 10) { edges { node { __typename slug } } } } } }`.
+  `last` / `before` are rejected. Types implement the Relay `Node` interface, so
+  `id` is an opaque global ID and `node(id: ID!)` refetches any album or media item.
 - Search: `searchMedia(query: String!): [MediaItem!]!` — fuzzy/typo-tolerant, backed
   by `pg_trgm` GIN indexes on title/subtitle/artist, e.g.
   `searchMedia(query: "raidhead") { __typename title ... on Song { artist } } }`
@@ -61,7 +66,8 @@ uv run pytest
 
 Tests are split so they still run without a database:
 - `test_health.py`, `test_graphql_schema.py` — no DB required, always run.
-- `test_graphql_sections.py`, `test_graphql_albums.py`, `test_media_router.py`,
+- `test_graphql_sections.py`, `test_graphql_albums.py`, `test_graphql_pagination.py`,
+  `test_media_router.py`,
   `test_graphql_search.py` — require Postgres; they auto-skip if `DATABASE_URL`
   isn't reachable, and seed the DB from the fixtures once (session-scoped) when it
   is.
@@ -80,9 +86,13 @@ See the plan doc above for the full rationale. Summary:
   separate ingest step once files exist locally (Phase 3).
 - `src/miya_server/graphql/` — Strawberry schema: `MediaItem` interface (`Song`/
   `Photo`), `AlbumRef`/`Album` types, `SectionEntry` union (`Song | Photo | Album`),
-  and the `Query` type (`sections`, `section(slug)`, `albums`, `album(slug)`).
-  `context.py` wires a per-request DB session plus an `album_loader` DataLoader so
-  resolving many items' back-reference to their album stays N+1-safe.
+  and the `Query` type (`node(id)`, `sections`, `section(slug)`, `albums`,
+  `album(slug)`). `Album`/`MediaItem` implement the Relay `Node` interface;
+  `albums` and `Album.items` return Relay connections. `pagination.py` holds the
+  shared keyset cursor helpers (`clamp_first`, `reject_backward`, `encode_cursor`/
+  `decode_cursor`, `build_connection`). `context.py` wires a per-request DB session
+  plus an `album_loader` DataLoader so resolving many items' back-reference to
+  their album stays N+1-safe.
 - `src/miya_server/repositories/` — query layer between GraphQL resolvers and
   SQLAlchemy; batches song/photo/album lookups per section or album instead of
   querying per item.
@@ -91,5 +101,11 @@ See the plan doc above for the full rationale. Summary:
 
 ## Not yet built
 
-Pagination and many-to-many album membership (skipped until the library grows
-enough to need them), and mutations/auth (deferred until real auth is designed).
+Many-to-many album membership (skipped until the library needs it), and
+mutations/auth (deferred until real auth is designed). `sections` /
+`Section.items` and `searchMedia` are still unpaginated — the curated section
+content is intentionally bounded and search is capped at 20 results.
+
+The iOS client (`../Miya`) still sends the pre-connection `albums { ... items { ... } }`
+query; it needs updating to the connection shape (`albums(first:, after:) { edges { node { ... } } pageInfo { ... } }`)
+and to treat `id` as an opaque global ID rather than a UUID.

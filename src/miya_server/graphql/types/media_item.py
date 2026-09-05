@@ -2,6 +2,7 @@ from datetime import datetime
 from uuid import UUID
 
 import strawberry
+from strawberry import relay
 
 from miya_server.db.models import MediaItem as DBMediaItem
 from miya_server.db.models import Photo as DBPhoto
@@ -11,14 +12,37 @@ from miya_server.repositories import media_items as media_items_repo
 
 
 @strawberry.interface
-class MediaItem:
-    id: strawberry.ID
+class MediaItem(relay.Node):
+    id: relay.NodeID[UUID]
     slug: str
     title: str
     subtitle: str
     system_image: str
     detail: str
     image_url: str | None
+
+    @classmethod
+    async def resolve_nodes(
+        cls,
+        *,
+        info: strawberry.Info,
+        node_ids: list[str],
+        required: bool = False,
+    ) -> list["Song | Photo | None"]:
+        session = info.context.session
+        db_items = await media_items_repo.batch_get_media_items(
+            session, [UUID(nid) for nid in node_ids]
+        )
+        entry_map = await build_media_entry_map(
+            session, [item for item in db_items if item is not None]
+        )
+        out: list[Song | Photo | None] = []
+        for nid, item in zip(node_ids, db_items, strict=True):
+            node = entry_map.get(item.id) if item is not None else None
+            if node is None and required:
+                raise ValueError(f"MediaItem with id {nid!r} not found")
+            out.append(node)
+        return out
 
 
 @strawberry.type
@@ -84,7 +108,7 @@ def _to_album_ref(db_album) -> AlbumRef:
 
 def build_song(item: DBMediaItem, song: DBSong) -> Song:
     return Song(
-        id=strawberry.ID(str(item.id)),
+        id=item.id,
         slug=item.slug,
         title=item.title,
         subtitle=item.subtitle,
@@ -101,7 +125,7 @@ def build_song(item: DBMediaItem, song: DBSong) -> Song:
 
 def build_photo(item: DBMediaItem, photo: DBPhoto) -> Photo:
     return Photo(
-        id=strawberry.ID(str(item.id)),
+        id=item.id,
         slug=item.slug,
         title=item.title,
         subtitle=item.subtitle,
@@ -147,3 +171,14 @@ async def build_media_entry_map(session, items: list[DBMediaItem]) -> dict[UUID,
 async def build_media_entries(session, items: list[DBMediaItem]) -> list["Song | Photo"]:
     entry_map = await build_media_entry_map(session, items)
     return [entry_map[item.id] for item in items if item.id in entry_map]
+
+
+@strawberry.type
+class MediaItemConnection(relay.Connection[MediaItem]):
+    album_id: strawberry.Private[UUID]
+
+    @strawberry.field
+    async def total_count(self, info: strawberry.Info) -> int:
+        return await media_items_repo.count_media_items_for_album(
+            info.context.session, self.album_id
+        )
