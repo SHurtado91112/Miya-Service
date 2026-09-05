@@ -1,4 +1,5 @@
 from datetime import datetime
+from typing import TYPE_CHECKING, Annotated
 from uuid import UUID
 
 import strawberry
@@ -9,6 +10,24 @@ from miya_server.db.models import Photo as DBPhoto
 from miya_server.db.models import Song as DBSong
 from miya_server.media.storage import build_media_url
 from miya_server.repositories import media_items as media_items_repo
+
+if TYPE_CHECKING:
+    from miya_server.graphql.types.author import Author
+
+# Lazy to break the import cycle: author.py imports MediaItem/build_media_entry_map
+# from this module.
+AuthorType = Annotated["Author", strawberry.lazy("miya_server.graphql.types.author")]
+
+
+async def _resolve_author(author_id: UUID | None, info: strawberry.Info) -> "Author | None":
+    if author_id is None:
+        return None
+    db_author = await info.context.author_loader.load(author_id)
+    if db_author is None:
+        return None
+    from miya_server.graphql.types.author import build_author
+
+    return build_author(db_author)
 
 
 @strawberry.interface
@@ -65,6 +84,7 @@ class Song(MediaItem):
     duration_seconds: int | None
     track_number: int | None
     _album_id: strawberry.Private[UUID | None]
+    _author_id: strawberry.Private[UUID | None]
 
     @strawberry.field
     async def album(self, info: strawberry.Info) -> AlbumRef | None:
@@ -72,6 +92,10 @@ class Song(MediaItem):
             return None
         db_album = await info.context.album_loader.load(self._album_id)
         return _to_album_ref(db_album) if db_album else None
+
+    @strawberry.field
+    async def author(self, info: strawberry.Info) -> AuthorType | None:
+        return await _resolve_author(self._author_id, info)
 
 
 @strawberry.type
@@ -86,6 +110,7 @@ class Photo(MediaItem):
     shutter_speed: str | None
     focal_length_mm: float | None
     _album_id: strawberry.Private[UUID | None]
+    _author_id: strawberry.Private[UUID | None]
 
     @strawberry.field
     async def album(self, info: strawberry.Info) -> AlbumRef | None:
@@ -93,6 +118,10 @@ class Photo(MediaItem):
             return None
         db_album = await info.context.album_loader.load(self._album_id)
         return _to_album_ref(db_album) if db_album else None
+
+    @strawberry.field
+    async def author(self, info: strawberry.Info) -> AuthorType | None:
+        return await _resolve_author(self._author_id, info)
 
 
 def _to_album_ref(db_album) -> AlbumRef:
@@ -120,6 +149,7 @@ def build_song(item: DBMediaItem, song: DBSong) -> Song:
         duration_seconds=song.duration_seconds,
         track_number=song.track_number,
         _album_id=item.album_id,
+        _author_id=item.author_id,
     )
 
 
@@ -142,6 +172,7 @@ def build_photo(item: DBMediaItem, photo: DBPhoto) -> Photo:
         shutter_speed=photo.shutter_speed,
         focal_length_mm=float(photo.focal_length_mm) if photo.focal_length_mm is not None else None,
         _album_id=item.album_id,
+        _author_id=item.author_id,
     )
 
 

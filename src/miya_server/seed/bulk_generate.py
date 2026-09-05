@@ -6,7 +6,7 @@ procedurally-named rows directly via SQLAlchemy and writes matching placeholder
 media source files (tiny PNGs for photos/covers, tiny silent WAVs for songs) to
 a scratch directory. Only a bounded sample of the generated rows is linked into
 the Home sections, so the UI stays usable -- the full corpus remains queryable
-via `albums`/`searchMedia`.
+via `albums`/`search`.
 
 After running this, ingest the generated media files with the existing CLI:
     uv run ingest-media --dir var/bulk-media-source
@@ -38,6 +38,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from miya_server.db.base import async_session_factory
 from miya_server.db.models import Album, MediaItem, Photo, Section, Song
 from miya_server.db.models.associations import section_albums, section_items
+from miya_server.seed.authors import get_or_create_author, get_or_create_photographer
 
 # Home sections the bulk sample links into. These are the curated sections
 # created by the base seed (`uv run seed`); the bulk generator must never create
@@ -138,6 +139,13 @@ async def _generate(
     all_photo_album_slugs: list[str] = []
 
     async with async_session_factory() as session:
+        # Authors: one row per synthetic artist name, plus the shared
+        # photographer every generated photo is credited to.
+        artist_author_ids = {
+            name: (await get_or_create_author(session, name)).id for name in ARTISTS
+        }
+        photographer_id = (await get_or_create_photographer(session)).id
+
         # Song albums + songs
         for a in range(song_albums):
             album_slug = _slug("bulk-song-album", a)
@@ -159,6 +167,7 @@ async def _generate(
                     system_image="music.note",
                     detail=f"Track {t + 1} of a generated test album.",
                     album_id=album.id,
+                    author_id=artist_author_ids[album.subtitle],
                 )
                 session.add(item)
                 await session.flush()
@@ -187,6 +196,7 @@ async def _generate(
                     system_image="photo",
                     detail="Generated test photo.",
                     album_id=album.id,
+                    author_id=photographer_id,
                 )
                 session.add(item)
                 await session.flush()
@@ -205,6 +215,7 @@ async def _generate(
                 system_image="music.note",
                 detail="Generated standalone test song.",
             )
+            item.author_id = artist_author_ids[item.subtitle]
             session.add(item)
             await session.flush()
             session.add(Song(media_item_id=item.id, artist=item.subtitle))
@@ -220,6 +231,7 @@ async def _generate(
                 subtitle="Test Library",
                 system_image="photo",
                 detail="Generated standalone test photo.",
+                author_id=photographer_id,
             )
             session.add(item)
             await session.flush()

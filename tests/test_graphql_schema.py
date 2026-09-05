@@ -10,7 +10,33 @@ from miya_server.graphql.schema import schema
 def test_query_type_has_expected_fields():
     query_type = schema.schema_converter.type_map["Query"]
     field_names = {field.name for field in query_type.definition.fields}
-    assert {"sections", "section", "albums", "album", "node"} <= field_names
+    assert {"sections", "section", "albums", "album", "node", "search"} <= field_names
+
+
+def test_search_field_shape():
+    sdl = schema.as_str()
+    assert "type SearchResult" in sdl
+    assert "entries: SearchEntryConnection!" in sdl
+    assert "authors: [Author!]!" in sdl
+    assert "type SearchEntryConnection" in sdl
+    assert "node: SectionEntry!" in sdl  # SearchEntryEdge carries the union
+
+    query_type = schema.schema_converter.type_map["Query"]
+    search_field = next(f for f in query_type.definition.fields if f.name == "search")
+    arg_names = {arg.python_name for arg in search_field.arguments}
+    assert {"query", "section_slug", "first", "after", "before", "last"} <= arg_names
+
+
+def test_author_is_a_node_with_a_relay_item_connection():
+    sdl = schema.as_str()
+    assert "type Author implements Node" in sdl
+    assert "type AuthorItemConnection" in sdl
+    assert "author: Author" in sdl  # Song / Photo back-link
+
+    author_type = schema.schema_converter.type_map["Author"]
+    items_field = next(f for f in author_type.definition.fields if f.name == "items")
+    arg_names = {arg.python_name for arg in items_field.arguments}
+    assert {"first", "after", "before", "last"} <= arg_names
 
 
 def test_section_entry_union_includes_song_photo_album():

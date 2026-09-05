@@ -33,10 +33,21 @@ Or just run `scripts/dev.sh`, which does all of the above.
   e.g. `albums(first: 20) { totalCount pageInfo { hasNextPage endCursor } edges { cursor node { slug items(first: 10) { edges { node { __typename slug } } } } } }`.
   `last` / `before` are rejected. Types implement the Relay `Node` interface, so
   `id` is an opaque global ID and `node(id: ID!)` refetches any album or media item.
-- Search: `searchMedia(query: String!): [MediaItem!]!` — fuzzy/typo-tolerant, backed
-  by `pg_trgm` GIN indexes on title/subtitle/artist, e.g.
-  `searchMedia(query: "raidhead") { __typename title ... on Song { artist } } }`
-  correctly matches all the seeded Radiohead songs despite the typo.
+- Search: `search(query: String!, sectionSlug: String, first: Int, after: String): SearchResult!`
+  — fuzzy/typo-tolerant (`pg_trgm` GIN indexes on media title/subtitle/artist and
+  album title/subtitle). `SearchResult.entries` is a forward Relay connection of
+  matching `Song | Photo | Album`, ordered by trigram relevance then `id` (opaque
+  `(score, id)` keyset cursors); `SearchResult.authors` is a small unpaginated list
+  of authors whose `name` matched. `sectionSlug` (`"music"` / `"photos"`) scopes
+  both to that section's membership. A media item also matches on its parent
+  album's title. e.g.
+  `search(query: "raidhead") { entries { edges { node { __typename ... on Song { title artist author { slug } album { slug } } } } } authors { slug name } }`.
+- Authors: `Song.author` / `Photo.author` resolve an `Author { id slug name }`
+  (Relay `Node`). Every song is credited to its artist; every photo to one
+  synthetic photographer (`slug: "steven-hurtado"`) since the source fixtures
+  carry no per-photo photographer. `node(id:)` refetches an author, and
+  `Author.items(first:, after:)` is a forward Relay connection of that author's
+  songs/photos across every album, keyed on `(title, id)`.
 - Media files: `GET /media/{file_id}` — streams a self-hosted file (range-request
   support for audio scrubbing, long-lived cache headers since content is immutable)
 
@@ -67,10 +78,9 @@ uv run pytest
 Tests are split so they still run without a database:
 - `test_health.py`, `test_graphql_schema.py` — no DB required, always run.
 - `test_graphql_sections.py`, `test_graphql_albums.py`, `test_graphql_pagination.py`,
-  `test_media_router.py`,
-  `test_graphql_search.py` — require Postgres; they auto-skip if `DATABASE_URL`
-  isn't reachable, and seed the DB from the fixtures once (session-scoped) when it
-  is.
+  `test_media_router.py`, `test_graphql_search.py`, `test_graphql_authors.py` —
+  require Postgres; they auto-skip if `DATABASE_URL` isn't reachable, and seed the
+  DB from the fixtures once (session-scoped) when it is.
 
 ## Project layout
 
@@ -83,16 +93,21 @@ See the plan doc above for the full rationale. Summary:
 - `src/miya_server/seed/` — loads the Miya app's bundled `home_sections.json` /
   `albums.json` fixtures into Postgres (idempotent, upserts by slug). Does **not**
   create `media_files` rows — picsum URLs are dropped; real media is linked up by a
-  separate ingest step once files exist locally (Phase 3).
+  separate ingest step once files exist locally (Phase 3). `authors.py` derives an
+  `authors` row per artist (+ the synthetic photographer) and is shared by the
+  seed and `bulk_generate.py`.
 - `src/miya_server/graphql/` — Strawberry schema: `MediaItem` interface (`Song`/
   `Photo`), `AlbumRef`/`Album` types, `SectionEntry` union (`Song | Photo | Album`),
   and the `Query` type (`node(id)`, `sections`, `section(slug)`, `albums`,
-  `album(slug)`). `Album`/`MediaItem` implement the Relay `Node` interface;
-  `albums` and `Album.items` return Relay connections. `pagination.py` holds the
-  shared keyset cursor helpers (`clamp_first`, `reject_backward`, `encode_cursor`/
-  `decode_cursor`, `build_connection`). `context.py` wires a per-request DB session
-  plus an `album_loader` DataLoader so resolving many items' back-reference to
-  their album stays N+1-safe.
+  `album(slug)`, `search`). `Album`/`MediaItem`/`Author` implement the Relay
+  `Node` interface; `albums`, `Album.items`, `Author.items` and `search.entries`
+  return Relay connections. `types/author.py` holds the `Author` node +
+  `Author.items` connection; `types/search.py` the `SearchResult` /
+  `SearchEntryConnection`. `pagination.py` holds the shared keyset cursor helpers
+  (`clamp_first`, `reject_backward`, `encode_cursor`/`decode_cursor`,
+  `build_connection`). `context.py` wires a per-request DB session plus
+  `album_loader` / `author_loader` DataLoaders so resolving many items'
+  back-references stays N+1-safe.
 - `src/miya_server/repositories/` — query layer between GraphQL resolvers and
   SQLAlchemy; batches song/photo/album lookups per section or album instead of
   querying per item.
@@ -101,11 +116,8 @@ See the plan doc above for the full rationale. Summary:
 
 ## Not yet built
 
-Many-to-many album membership (skipped until the library needs it), and
+Many-to-many album membership (skipped until the library needs it), album
+authorship (`Album.author` — only songs/photos carry `author_id` today), and
 mutations/auth (deferred until real auth is designed). `sections` /
-`Section.items` and `searchMedia` are still unpaginated — the curated section
-content is intentionally bounded and search is capped at 20 results.
-
-The iOS client (`../Miya`) still sends the pre-connection `albums { ... items { ... } }`
-query; it needs updating to the connection shape (`albums(first:, after:) { edges { node { ... } } pageInfo { ... } }`)
-and to treat `id` as an opaque global ID rather than a UUID.
+`Section.items` are still unpaginated — the curated section content is
+intentionally bounded.

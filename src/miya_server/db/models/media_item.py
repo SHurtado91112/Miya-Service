@@ -18,6 +18,7 @@ class MediaItem(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __table_args__ = (
         CheckConstraint("kind IN ('song', 'photo')", name="media_items_kind_check"),
         Index("ix_media_items_album_id_title_id", "album_id", "title", "id"),
+        Index("ix_media_items_author_id_title_id", "author_id", "title", "id"),
     )
 
     slug: Mapped[str] = mapped_column(String, unique=True, nullable=False)
@@ -32,9 +33,13 @@ class MediaItem(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     album_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("albums.id", ondelete="SET NULL"), nullable=True
     )
+    author_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("authors.id", ondelete="SET NULL"), nullable=True
+    )
 
     primary_media_file = relationship("MediaFile")
     album = relationship("Album", back_populates="items")
+    author = relationship("Author", back_populates="items")
 
 
 class Song(Base):

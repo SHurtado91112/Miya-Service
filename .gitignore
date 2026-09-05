@@ -23,3 +23,6 @@ media/*
 !media/songs/.gitkeep
 !media/photos/.gitkeep
 !media/albums/.gitkeep
+
+# local agent/session state
+.claude/
