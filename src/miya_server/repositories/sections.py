@@ -53,5 +53,21 @@ async def list_section_entries(session: AsyncSession, section_id: UUID) -> list[
         SectionEntryRow(kind="album", sort_order=sort_order, album=album)
         for album, sort_order in album_rows
     ]
+
+    # Fold album members away: a media item whose album is also an album card in
+    # this section is dropped -- the card stands in for it.
+    album_ids_in_section = {
+        entry.album.id for entry in entries if entry.kind == "album" and entry.album is not None
+    }
+    entries = [
+        entry
+        for entry in entries
+        if not (
+            entry.kind == "media_item"
+            and entry.media_item is not None
+            and entry.media_item.album_id in album_ids_in_section
+        )
+    ]
+
     entries.sort(key=lambda entry: entry.sort_order)
     return entries

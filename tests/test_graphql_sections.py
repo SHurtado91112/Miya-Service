@@ -3,22 +3,24 @@ import pytest
 pytestmark = pytest.mark.usefixtures("seeded_db")
 
 
-async def test_sections_returns_music_and_photos(client):
-    query = """
-    query {
-      sections {
-        slug
-        title
-        items {
-          __typename
-          ... on Song { title artist }
-          ... on Photo { title }
-          ... on Album { title }
-        }
-      }
+_SECTIONS_QUERY = """
+query {
+  sections {
+    slug
+    title
+    items {
+      __typename
+      ... on Song { slug title artist }
+      ... on Photo { slug title }
+      ... on Album { slug title }
     }
-    """
-    response = await client.post("/graphql", json={"query": query})
+  }
+}
+"""
+
+
+async def test_sections_returns_music_and_photos(client):
+    response = await client.post("/graphql", json={"query": _SECTIONS_QUERY})
     assert response.status_code == 200
     body = response.json()
     assert "errors" not in body, body
@@ -32,6 +34,20 @@ async def test_sections_returns_music_and_photos(client):
     assert "Album" in typenames
     album_titles = {item["title"] for item in music_items if item["__typename"] == "Album"}
     assert "In Rainbows" in album_titles
+
+
+async def test_section_folds_album_members(client):
+    response = await client.post("/graphql", json={"query": _SECTIONS_QUERY})
+    body = response.json()
+    assert "errors" not in body, body
+    music_items = {s["slug"]: s for s in body["data"]["sections"]}["music"]["items"]
+
+    album_slugs = {i["slug"] for i in music_items if i["__typename"] == "Album"}
+    song_slugs = {i["slug"] for i in music_items if i["__typename"] == "Song"}
+    # "weird-fishes" is a music section_item whose album ("in-rainbows") is also
+    # a card in the section -> it folds into the card.
+    assert "in-rainbows" in album_slugs
+    assert "weird-fishes" not in song_slugs
 
 
 async def test_section_by_slug(client):

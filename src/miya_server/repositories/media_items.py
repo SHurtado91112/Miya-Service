@@ -106,11 +106,32 @@ class SearchEntryRow:
     score: float
 
 
+def _matched_album_ids(query: str, section_slug: str | None):
+    """SELECT of album ids whose title/subtitle match `query` (optionally scoped
+    to a section's album cards). Drives the album branch of the search union and
+    the folding exclusion on the media branch."""
+    stmt = select(Album.id).where(
+        or_(Album.title.op("%")(query), Album.subtitle.op("%")(query))
+    )
+    if section_slug is not None:
+        stmt = stmt.where(
+            Album.id.in_(
+                select(section_albums.c.album_id)
+                .join(Section, Section.id == section_albums.c.section_id)
+                .where(Section.slug == section_slug)
+            )
+        )
+    return stmt
+
+
 def _search_union(query: str, section_slug: str | None):
     """SELECT of `(row_kind, id, title, score)` for every media item or album
     matching `query` on title / subtitle / (song) artist / parent-album title,
     via the pg_trgm `%` operator. `score` is the best per-row trigram
-    similarity. Optionally scoped to one section's membership."""
+    similarity. Optionally scoped to one section's membership.
+
+    Album members are folded away: a media item whose parent album is itself a
+    match is excluded, so the album row stands in for it."""
     parent_album = aliased(Album)
 
     media_score = func.greatest(
@@ -137,6 +158,12 @@ def _search_union(query: str, section_slug: str | None):
                 parent_album.title.op("%")(query),
             )
         )
+        .where(
+            or_(
+                MediaItem.album_id.is_(None),
+                MediaItem.album_id.not_in(_matched_album_ids(query, section_slug)),
+            )
+        )
     )
 
     album_score = func.greatest(
@@ -148,20 +175,13 @@ def _search_union(query: str, section_slug: str | None):
         Album.id.label("id"),
         Album.title.label("title"),
         album_score.label("score"),
-    ).where(or_(Album.title.op("%")(query), Album.subtitle.op("%")(query)))
+    ).where(Album.id.in_(_matched_album_ids(query, section_slug)))
 
     if section_slug is not None:
         media_items_q = media_items_q.where(
             MediaItem.id.in_(
                 select(section_items.c.media_item_id)
                 .join(Section, Section.id == section_items.c.section_id)
-                .where(Section.slug == section_slug)
-            )
-        )
-        albums_q = albums_q.where(
-            Album.id.in_(
-                select(section_albums.c.album_id)
-                .join(Section, Section.id == section_albums.c.section_id)
                 .where(Section.slug == section_slug)
             )
         )
