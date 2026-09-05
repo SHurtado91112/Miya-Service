@@ -15,6 +15,9 @@ wheels/
 # mkcert certs for LAN/device testing (machine + IP specific)
 certs/
 
+# Scratch output from generate-bulk-data (placeholder media source files)
+var/
+
 # Local media storage (self-hosted files, not checked into git)
 media/*
 !media/songs/.gitkeep
