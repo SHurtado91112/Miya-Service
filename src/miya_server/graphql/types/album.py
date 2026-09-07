@@ -1,4 +1,5 @@
 import uuid
+from typing import TYPE_CHECKING, Annotated
 
 import strawberry
 from strawberry import relay
@@ -14,9 +15,15 @@ from miya_server.graphql.types.media_item import (
     MediaItemConnection,
     build_media_entry_map,
 )
-from miya_server.media.storage import build_media_url
+from miya_server.media.storage import build_media_url, build_thumbnail_url
 from miya_server.repositories import albums as albums_repo
 from miya_server.repositories import media_items as media_items_repo
+
+if TYPE_CHECKING:
+    from miya_server.graphql.types.author import Author
+
+# Lazy to avoid an import cycle with author.py (it imports from media_item.py).
+AuthorType = Annotated["Author", strawberry.lazy("miya_server.graphql.types.author")]
 
 _ITEM_CURSOR_PREFIX = "mediaitem"
 
@@ -29,6 +36,23 @@ class Album(relay.Node):
     subtitle: str
     system_image: str
     image_url: str | None
+    thumbnail_url: str | None
+
+    @strawberry.field
+    async def author(self, info: strawberry.Info) -> AuthorType | None:
+        """The album's representative author -- the credited author of its first
+        item by ``(title, id)``. ``None`` when no item carries an author."""
+        author_id = await media_items_repo.get_primary_author_id_for_album(
+            info.context.session, self.id
+        )
+        if author_id is None:
+            return None
+        db_author = await info.context.author_loader.load(author_id)
+        if db_author is None:
+            return None
+        from miya_server.graphql.types.author import build_author
+
+        return build_author(db_author)
 
     @strawberry.field
     async def items(
@@ -105,4 +129,5 @@ def build_album(db_album: DBAlbum) -> Album:
         subtitle=db_album.subtitle,
         system_image=db_album.system_image,
         image_url=build_media_url(db_album.cover_media_file_id),
+        thumbnail_url=build_thumbnail_url(db_album.cover_media_file_id),
     )

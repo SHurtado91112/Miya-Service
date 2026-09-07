@@ -1,4 +1,5 @@
 import uuid
+from typing import TYPE_CHECKING, Annotated
 
 import strawberry
 from strawberry import relay
@@ -11,8 +12,15 @@ from miya_server.graphql.pagination import (
     reject_backward,
 )
 from miya_server.graphql.types.media_item import MediaItem, build_media_entry_map
+from miya_server.media.storage import build_media_url, build_thumbnail_url
 from miya_server.repositories import authors as authors_repo
 from miya_server.repositories import media_items as media_items_repo
+
+if TYPE_CHECKING:
+    from miya_server.graphql.types.album import Album
+
+# Lazy to avoid an import cycle with album.py (it imports from media_item.py).
+AlbumType = Annotated["Album", strawberry.lazy("miya_server.graphql.types.album")]
 
 _AUTHOR_ITEM_CURSOR_PREFIX = "authoritem"
 
@@ -33,6 +41,20 @@ class Author(relay.Node):
     id: relay.NodeID[uuid.UUID]
     slug: str
     name: str
+    image_url: str | None
+    thumbnail_url: str | None
+
+    @strawberry.field
+    async def albums(self, info: strawberry.Info) -> list[AlbumType]:
+        """Every album this author is credited on, ordered by (title, id).
+        Unpaginated -- an author has few albums. The `items` connection still
+        lists this author's songs and photos individually."""
+        from miya_server.graphql.types.album import build_album
+
+        db_albums = await authors_repo.list_albums_for_author(
+            info.context.session, self.id
+        )
+        return [build_album(db_album) for db_album in db_albums]
 
     @strawberry.field
     async def items(
@@ -99,4 +121,10 @@ class Author(relay.Node):
 
 
 def build_author(db_author: DBAuthor) -> Author:
-    return Author(id=db_author.id, slug=db_author.slug, name=db_author.name)
+    return Author(
+        id=db_author.id,
+        slug=db_author.slug,
+        name=db_author.name,
+        image_url=build_media_url(db_author.profile_media_file_id),
+        thumbnail_url=build_thumbnail_url(db_author.profile_media_file_id),
+    )

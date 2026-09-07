@@ -38,6 +38,21 @@ def test_author_is_a_node_with_a_relay_item_connection():
     arg_names = {arg.python_name for arg in items_field.arguments}
     assert {"first", "after", "before", "last"} <= arg_names
 
+    # The author page also lists that author's albums (unpaginated).
+    field_names = {f.name for f in author_type.definition.fields}
+    assert "albums" in field_names
+
+
+def test_image_and_thumbnail_urls_are_exposed_on_every_image_bearing_type():
+    for type_name in ("Author", "Album", "Song", "Photo", "AlbumRef", "MediaItem"):
+        gql_type = schema.schema_converter.type_map[type_name]
+        field_names = {f.name for f in gql_type.definition.fields}
+        assert {"image_url", "thumbnail_url"} <= field_names, type_name
+
+    sdl = schema.as_str()
+    assert "imageUrl: String" in sdl
+    assert "thumbnailUrl: String" in sdl
+
 
 def test_section_entry_union_includes_song_photo_album():
     union_type = schema.schema_converter.type_map["SectionEntry"]
@@ -69,3 +84,9 @@ def test_albums_is_a_relay_connection():
     items_field = next(f for f in album_type.definition.fields if f.name == "items")
     item_arg_names = {arg.python_name for arg in items_field.arguments}
     assert {"first", "after", "before", "last"} <= item_arg_names
+
+
+def test_album_has_an_author_field():
+    album_type = schema.schema_converter.type_map["Album"]
+    field_names = {f.name for f in album_type.definition.fields}
+    assert "author" in field_names  # nullable Album -> Author subheader link

@@ -8,7 +8,7 @@ from strawberry import relay
 from miya_server.db.models import MediaItem as DBMediaItem
 from miya_server.db.models import Photo as DBPhoto
 from miya_server.db.models import Song as DBSong
-from miya_server.media.storage import build_media_url
+from miya_server.media.storage import build_media_url, build_thumbnail_url
 from miya_server.repositories import media_items as media_items_repo
 
 if TYPE_CHECKING:
@@ -39,6 +39,7 @@ class MediaItem(relay.Node):
     system_image: str
     detail: str
     image_url: str | None
+    thumbnail_url: str | None
 
     @classmethod
     async def resolve_nodes(
@@ -75,6 +76,7 @@ class AlbumRef:
     subtitle: str
     system_image: str
     image_url: str | None
+    thumbnail_url: str | None
 
 
 @strawberry.type
@@ -132,6 +134,7 @@ def _to_album_ref(db_album) -> AlbumRef:
         subtitle=db_album.subtitle,
         system_image=db_album.system_image,
         image_url=build_media_url(db_album.cover_media_file_id),
+        thumbnail_url=build_thumbnail_url(db_album.cover_media_file_id),
     )
 
 
@@ -144,6 +147,7 @@ def build_song(item: DBMediaItem, song: DBSong) -> Song:
         system_image=item.system_image,
         detail=item.detail,
         image_url=build_media_url(item.primary_media_file_id),
+        thumbnail_url=build_thumbnail_url(item.primary_media_file_id),
         artist=song.artist,
         audio_url=build_media_url(song.audio_file_id),
         duration_seconds=song.duration_seconds,
@@ -162,6 +166,7 @@ def build_photo(item: DBMediaItem, photo: DBPhoto) -> Photo:
         system_image=item.system_image,
         detail=item.detail,
         image_url=build_media_url(photo.image_file_id or item.primary_media_file_id),
+        thumbnail_url=build_thumbnail_url(photo.image_file_id or item.primary_media_file_id),
         capture_date=photo.capture_date,
         width=photo.width,
         height=photo.height,

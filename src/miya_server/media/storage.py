@@ -11,3 +11,13 @@ def build_media_url(file_id: UUID | None) -> str | None:
         return None
     settings = get_settings()
     return f"{settings.public_base_url}/media/{file_id}"
+
+
+def build_thumbnail_url(file_id: UUID | None) -> str | None:
+    """The /media/{id}/thumb URL for the same media_files.id. Emitted whenever
+    build_media_url is -- the endpoint serves the original bytes when no
+    thumbnail has been generated yet, so this is never a broken link."""
+    if file_id is None:
+        return None
+    settings = get_settings()
+    return f"{settings.public_base_url}/media/{file_id}/thumb"

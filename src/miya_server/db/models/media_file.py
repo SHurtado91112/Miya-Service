@@ -19,6 +19,13 @@ class MediaFile(UUIDPrimaryKeyMixin, Base):
     width: Mapped[int | None] = mapped_column(Integer, nullable=True)
     height: Mapped[int | None] = mapped_column(Integer, nullable=True)
     checksum_sha256: Mapped[str | None] = mapped_column(String, nullable=True)
+    # Generated WebP derivative stored on disk next to the original (same UUID
+    # stem, "_thumb.webp" suffix). NULL until a thumbnail has been generated --
+    # GET /media/{id}/thumb falls back to the original bytes while it is.
+    thumbnail_relative_path: Mapped[str | None] = mapped_column(String, unique=True, nullable=True)
+    thumbnail_width: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    thumbnail_height: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    thumbnail_mime_type: Mapped[str | None] = mapped_column(String, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

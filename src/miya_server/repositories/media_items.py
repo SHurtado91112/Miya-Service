@@ -31,6 +31,21 @@ async def list_media_items_for_album_page(
     return list(result.scalars().all())
 
 
+async def get_primary_author_id_for_album(
+    session: AsyncSession, album_id: UUID
+) -> UUID | None:
+    """The ``author_id`` of an album's first item by ``(title, id)`` -- an
+    album's representative author. The seed gives every item in an album the
+    same artist / photographer, so the first item stands in for the album."""
+    stmt = (
+        select(MediaItem.author_id)
+        .where(MediaItem.album_id == album_id, MediaItem.author_id.is_not(None))
+        .order_by(MediaItem.title.asc(), MediaItem.id.asc())
+        .limit(1)
+    )
+    return (await session.execute(stmt)).scalars().first()
+
+
 async def count_media_items_for_album(session: AsyncSession, album_id: UUID) -> int:
     result = await session.execute(
         select(func.count()).select_from(MediaItem).where(MediaItem.album_id == album_id)

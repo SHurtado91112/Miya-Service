@@ -3,13 +3,27 @@ from uuid import UUID
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from miya_server.db.models import Author, MediaItem, Section
+from miya_server.db.models import Album, Author, MediaItem, Section
 from miya_server.db.models.associations import section_items
 
 
 async def get_author_by_slug(session: AsyncSession, slug: str) -> Author | None:
     result = await session.execute(select(Author).where(Author.slug == slug))
     return result.scalar_one_or_none()
+
+
+async def list_albums_for_author(session: AsyncSession, author_id: UUID) -> list[Album]:
+    """Every album that contains at least one item credited to this author,
+    ordered by (title, id). Unpaginated -- an author has few albums."""
+    stmt = (
+        select(Album)
+        .join(MediaItem, MediaItem.album_id == Album.id)
+        .where(MediaItem.author_id == author_id)
+        .order_by(Album.title.asc(), Album.id.asc())
+        .distinct()
+    )
+    result = await session.execute(stmt)
+    return list(result.scalars().unique().all())
 
 
 async def batch_get_authors(session: AsyncSession, ids: list[UUID]) -> list[Author | None]:

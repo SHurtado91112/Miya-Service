@@ -38,7 +38,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from miya_server.db.base import async_session_factory
 from miya_server.db.models import Album, MediaItem, Photo, Section, Song
 from miya_server.db.models.associations import section_albums, section_items
-from miya_server.seed.authors import get_or_create_author, get_or_create_photographer
+from miya_server.seed.authors import (
+    PHOTOGRAPHER_NAME,
+    get_or_create_author,
+    get_or_create_photographer,
+    slugify,
+)
 
 # Home sections the bulk sample links into. These are the curated sections
 # created by the base seed (`uv run seed`); the bulk generator must never create
@@ -107,6 +112,20 @@ def _make_cover_png(rng: random.Random) -> bytes:
     return buf.getvalue()
 
 
+def _make_portrait_png(rng: random.Random) -> bytes:
+    """A distinct-looking placeholder portrait: a filled circle on a solid
+    background. Bigger than 512px on the long edge so ingest's thumbnailer
+    actually downscales it (exercises the no-upscale clamp too)."""
+    bg = (rng.randrange(30, 200), rng.randrange(30, 200), rng.randrange(30, 200))
+    img = Image.new("RGB", (640, 640), color=bg)
+    draw = ImageDraw.Draw(img)
+    fg = tuple(min(255, c + 70) for c in bg)
+    draw.ellipse([120, 120, 520, 520], fill=fg)
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+    return buf.getvalue()
+
+
 def _make_silent_wav(seconds: float = 1.0, sample_rate: int = 8000) -> bytes:
     buf = io.BytesIO()
     with wave.open(buf, "wb") as wav_file:
@@ -129,6 +148,7 @@ async def _generate(
     section_album_sample: int,
     media_dir: Path,
     seed: int,
+    author_portraits: bool = True,
 ) -> None:
     rng = random.Random(seed)
     media_dir.mkdir(parents=True, exist_ok=True)
@@ -145,6 +165,14 @@ async def _generate(
             name: (await get_or_create_author(session, name)).id for name in ARTISTS
         }
         photographer_id = (await get_or_create_photographer(session)).id
+
+        # Placeholder portraits, matched to authors by the `author-<slug>`
+        # filename convention the ingest CLI expects.
+        if author_portraits:
+            for name in [*ARTISTS, PHOTOGRAPHER_NAME]:
+                (media_dir / f"author-{slugify(name)}.png").write_bytes(
+                    _make_portrait_png(rng)
+                )
 
         # Song albums + songs
         for a in range(song_albums):
@@ -493,6 +521,12 @@ def main() -> None:
     parser.add_argument("--section-album-sample", type=int, default=40)
     parser.add_argument("--media-dir", type=Path, default=Path("var/bulk-media-source"))
     parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument(
+        "--author-portraits",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Write placeholder author-<slug>.png portraits for later ingest-media.",
+    )
     args = parser.parse_args()
 
     if args.clean:
@@ -521,6 +555,7 @@ def main() -> None:
             section_album_sample=args.section_album_sample,
             media_dir=args.media_dir,
             seed=args.seed,
+            author_portraits=args.author_portraits,
         )
     )
 

@@ -1,4 +1,7 @@
-from sqlalchemy import Index, String
+import uuid
+
+from sqlalchemy import ForeignKey, Index, String
+from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from miya_server.db.base import Base
@@ -21,5 +24,9 @@ class Author(UUIDPrimaryKeyMixin, TimestampMixin, Base):
 
     slug: Mapped[str] = mapped_column(String, unique=True, nullable=False)
     name: Mapped[str] = mapped_column(String, nullable=False)
+    profile_media_file_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("media_files.id"), nullable=True
+    )
 
+    profile_media_file = relationship("MediaFile")
     items = relationship("MediaItem", back_populates="author")

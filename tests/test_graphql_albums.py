@@ -63,6 +63,26 @@ async def test_album_detail_by_slug(client):
         assert node["album"]["slug"] == "in-rainbows"
 
 
+async def test_album_exposes_its_representative_author(client):
+    query = """
+    query {
+      album(slug: "in-rainbows") {
+        author { slug name }
+        items(first: 1) {
+          edges { node { ... on Song { author { slug name } } } }
+        }
+      }
+    }
+    """
+    body = (await client.post("/graphql", json={"query": query})).json()
+    assert "errors" not in body, body
+    album = body["data"]["album"]
+    assert album["author"] is not None
+    # The album's author is the one credited on its items.
+    item_author = album["items"]["edges"][0]["node"]["author"]
+    assert album["author"] == item_author
+
+
 async def test_unknown_album_returns_null(client):
     query = 'query { album(slug: "does-not-exist") { title } }'
     response = await client.post("/graphql", json={"query": query})

@@ -65,6 +65,8 @@ query ($id: ID!, $first: Int, $after: String) {
       id
       slug
       name
+      imageUrl
+      thumbnailUrl
       items(first: $first, after: $after) {
         totalCount
         pageInfo { hasNextPage endCursor }
@@ -82,6 +84,15 @@ async def _radiohead_author_id(client) -> str:
         if item["__typename"] == "Song" and item["author"] and item["author"]["slug"] == "radiohead":
             return item["author"]["id"]
     raise AssertionError("no Radiohead song with an author in the music section")
+
+
+async def test_author_without_portrait_has_null_image_urls(client):
+    # Seeded authors carry no portrait, so both URL fields resolve to null
+    # (the field still exists on the type -- schema contract for the client).
+    author_id = await _radiohead_author_id(client)
+    node = (await _gql(client, AUTHOR_NODE, id=author_id, first=1))["node"]
+    assert node["imageUrl"] is None
+    assert node["thumbnailUrl"] is None
 
 
 async def test_author_node_refetch_and_items_pagination(client):
@@ -108,6 +119,28 @@ async def test_author_node_refetch_and_items_pagination(client):
     assert set(s1).isdisjoint(s2)
     titles = [e["node"]["title"] for e in page1["items"]["edges"] + page2["items"]["edges"]]
     assert titles == sorted(titles)
+
+
+AUTHOR_ALBUMS = """
+query ($id: ID!) {
+  node(id: $id) {
+    ... on Author {
+      slug
+      albums { slug title author { slug } }
+    }
+  }
+}
+"""
+
+
+async def test_author_exposes_its_albums(client):
+    author_id = await _radiohead_author_id(client)
+    node = (await _gql(client, AUTHOR_ALBUMS, id=author_id))["node"]
+    slugs = [a["slug"] for a in node["albums"]]
+    assert "in-rainbows" in slugs
+    assert slugs == sorted(slugs)  # ordered by (title, id)
+    for album in node["albums"]:
+        assert album["author"]["slug"] == "radiohead"
 
 
 async def test_author_items_reject_backward_pagination(client):

@@ -19,6 +19,7 @@ dependencies = [
 [project.scripts]
 seed = "miya_server.seed.seed_data:main"
 ingest-media = "miya_server.media.ingest:main"
+backfill-thumbnails = "miya_server.media.thumbnails:main"
 generate-bulk-data = "miya_server.seed.bulk_generate:main"
 
 [build-system]
