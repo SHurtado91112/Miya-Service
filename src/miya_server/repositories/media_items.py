@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
 from miya_server.db.models import Album, MediaItem, Photo, Section, Song
-from miya_server.db.models.associations import section_albums, section_items
+from miya_server.db.models.associations import section_items
 
 
 async def list_media_items_for_album_page(
@@ -121,19 +121,43 @@ class SearchEntryRow:
     score: float
 
 
+def _section_kind_subquery(section_slug: str):
+    """Scalar subquery for the `media_items.kind` ('song'/'photo') that a
+    section's slug represents. Sections are one-kind-per-section (curated
+    membership in `section_items`/`section_albums` is a Home-feed pick list,
+    not the section's full domain), so resolving via any one curated item's
+    kind correctly identifies the domain to scope search to."""
+    return (
+        select(MediaItem.kind)
+        .join(section_items, section_items.c.media_item_id == MediaItem.id)
+        .join(Section, Section.id == section_items.c.section_id)
+        .where(Section.slug == section_slug)
+        .limit(1)
+        .scalar_subquery()
+    )
+
+
 def _matched_album_ids(query: str, section_slug: str | None):
-    """SELECT of album ids whose title/subtitle match `query` (optionally scoped
-    to a section's album cards). Drives the album branch of the search union and
-    the folding exclusion on the media branch."""
+    """SELECT of album ids whose title/subtitle match `query` (optionally
+    scoped to a section's domain kind -- every album is homogeneously one
+    kind, so this includes every matching album in that domain, not just
+    ones hand-curated onto the Home feed). Drives the album branch of the
+    search union and the folding exclusion on the media branch."""
     stmt = select(Album.id).where(
-        or_(Album.title.op("%")(query), Album.subtitle.op("%")(query))
+        or_(
+            Album.title.op("%")(query),
+            Album.subtitle.op("%")(query),
+            Album.title.ilike(f"%{query}%"),
+            Album.subtitle.ilike(f"%{query}%"),
+        )
     )
     if section_slug is not None:
         stmt = stmt.where(
             Album.id.in_(
-                select(section_albums.c.album_id)
-                .join(Section, Section.id == section_albums.c.section_id)
-                .where(Section.slug == section_slug)
+                select(MediaItem.album_id).where(
+                    MediaItem.album_id.is_not(None),
+                    MediaItem.kind == _section_kind_subquery(section_slug),
+                )
             )
         )
     return stmt
@@ -142,11 +166,14 @@ def _matched_album_ids(query: str, section_slug: str | None):
 def _search_union(query: str, section_slug: str | None):
     """SELECT of `(row_kind, id, title, score)` for every media item or album
     matching `query` on title / subtitle / (song) artist / parent-album title,
-    via the pg_trgm `%` operator. `score` is the best per-row trigram
-    similarity. Optionally scoped to one section's membership.
+    via the pg_trgm `%` operator combined with a plain `ILIKE` substring
+    fallback (a short query can score below the trigram similarity threshold
+    against a longer target even when it's an exact substring match). `score`
+    is the best per-row trigram similarity, used for ordering only.
 
-    Album members are folded away: a media item whose parent album is itself a
-    match is excluded, so the album row stands in for it."""
+    Album members are folded away when their parent album is itself a match
+    and the item has no independent match of its own; an item whose own
+    title/subtitle/artist matches is kept even if its album also matches."""
     parent_album = aliased(Album)
 
     media_score = func.greatest(
@@ -154,6 +181,16 @@ def _search_union(query: str, section_slug: str | None):
         func.similarity(MediaItem.subtitle, query),
         func.similarity(func.coalesce(Song.artist, ""), query),
         func.similarity(func.coalesce(parent_album.title, ""), query),
+    )
+    # An item's own match, independent of its parent album -- used both to admit
+    # rows into the union and to decide whether album-folding should apply.
+    own_match = or_(
+        MediaItem.title.op("%")(query),
+        MediaItem.title.ilike(f"%{query}%"),
+        MediaItem.subtitle.op("%")(query),
+        MediaItem.subtitle.ilike(f"%{query}%"),
+        Song.artist.op("%")(query),
+        Song.artist.ilike(f"%{query}%"),
     )
     media_items_q = (
         select(
@@ -167,16 +204,16 @@ def _search_union(query: str, section_slug: str | None):
         .outerjoin(parent_album, parent_album.id == MediaItem.album_id)
         .where(
             or_(
-                MediaItem.title.op("%")(query),
-                MediaItem.subtitle.op("%")(query),
-                Song.artist.op("%")(query),
+                own_match,
                 parent_album.title.op("%")(query),
+                parent_album.title.ilike(f"%{query}%"),
             )
         )
         .where(
             or_(
                 MediaItem.album_id.is_(None),
                 MediaItem.album_id.not_in(_matched_album_ids(query, section_slug)),
+                own_match,
             )
         )
     )
@@ -194,11 +231,7 @@ def _search_union(query: str, section_slug: str | None):
 
     if section_slug is not None:
         media_items_q = media_items_q.where(
-            MediaItem.id.in_(
-                select(section_items.c.media_item_id)
-                .join(Section, Section.id == section_items.c.section_id)
-                .where(Section.slug == section_slug)
-            )
+            MediaItem.kind == _section_kind_subquery(section_slug)
         )
 
     return media_items_q.union_all(albums_q)

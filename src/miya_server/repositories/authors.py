@@ -1,6 +1,6 @@
 from uuid import UUID
 
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from miya_server.db.models import Album, Author, MediaItem, Section
@@ -52,16 +52,25 @@ async def search_authors(
 
     stmt = (
         select(Author)
-        .where(Author.name.op("%")(query))
+        .where(or_(Author.name.op("%")(query), Author.name.ilike(f"%{query}%")))
         .order_by(func.similarity(Author.name, query).desc(), Author.id.asc())
         .limit(limit)
     )
     if section_slug is not None:
-        in_section = (
-            select(MediaItem.author_id)
+        # `section_items` is a Home-feed curated pick list, not a section's
+        # full domain -- scope by the section's media kind instead, so every
+        # author with a song/photo in that domain is eligible, not just ones
+        # hand-curated onto the Home feed. See media_items._section_kind_subquery.
+        section_kind = (
+            select(MediaItem.kind)
             .join(section_items, section_items.c.media_item_id == MediaItem.id)
             .join(Section, Section.id == section_items.c.section_id)
-            .where(Section.slug == section_slug, MediaItem.author_id.is_not(None))
+            .where(Section.slug == section_slug)
+            .limit(1)
+            .scalar_subquery()
+        )
+        in_section = select(MediaItem.author_id).where(
+            MediaItem.author_id.is_not(None), MediaItem.kind == section_kind
         )
         stmt = stmt.where(Author.id.in_(in_section))
 
