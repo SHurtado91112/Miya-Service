@@ -11,8 +11,8 @@ import pytest
 pytestmark = pytest.mark.usefixtures("seeded_db")
 
 
-async def _gql(client, query, **variables):
-    response = await client.post(
+async def _gql(authed_client, query, **variables):
+    response = await authed_client.post(
         "/graphql", json={"query": query, "variables": variables or {}}
     )
     return response.json()
@@ -29,14 +29,14 @@ query ($first: Int, $after: String) {
 """
 
 
-async def _walk_all_albums(client, page_size):
+async def _walk_all_albums(authed_client, page_size):
     """Page through every album, returning (ordered slugs, ordered titles, totalCount)."""
     slugs: list[str] = []
     titles: list[str] = []
     after = None
     total = None
     while True:
-        body = await _gql(client, ALBUMS_PAGE, first=page_size, after=after)
+        body = await _gql(authed_client, ALBUMS_PAGE, first=page_size, after=after)
         assert "errors" not in body, body
         conn = body["data"]["albums"]
         total = conn["totalCount"]
@@ -51,8 +51,8 @@ async def _walk_all_albums(client, page_size):
     return slugs, titles, total
 
 
-async def test_first_is_respected_and_has_next_page(client):
-    body = await _gql(client, ALBUMS_PAGE, first=2)
+async def test_first_is_respected_and_has_next_page(authed_client):
+    body = await _gql(authed_client, ALBUMS_PAGE, first=2)
     assert "errors" not in body, body
     conn = body["data"]["albums"]
     assert len(conn["edges"]) == 2
@@ -63,10 +63,10 @@ async def test_first_is_respected_and_has_next_page(client):
     assert all(e["cursor"] for e in conn["edges"])
 
 
-async def test_after_cursor_advances_without_overlap(client):
-    page1 = (await _gql(client, ALBUMS_PAGE, first=3))["data"]["albums"]
+async def test_after_cursor_advances_without_overlap(authed_client):
+    page1 = (await _gql(authed_client, ALBUMS_PAGE, first=3))["data"]["albums"]
     page2 = (
-        await _gql(client, ALBUMS_PAGE, first=3, after=page1["pageInfo"]["endCursor"])
+        await _gql(authed_client, ALBUMS_PAGE, first=3, after=page1["pageInfo"]["endCursor"])
     )["data"]["albums"]
 
     s1 = [e["node"]["slug"] for e in page1["edges"]]
@@ -77,26 +77,26 @@ async def test_after_cursor_advances_without_overlap(client):
     assert page1["edges"][-1]["node"]["title"] <= page2["edges"][0]["node"]["title"]
 
 
-async def test_full_walk_has_no_gaps_or_duplicates(client):
-    slugs, titles, total = await _walk_all_albums(client, page_size=7)
+async def test_full_walk_has_no_gaps_or_duplicates(authed_client):
+    slugs, titles, total = await _walk_all_albums(authed_client, page_size=7)
     assert len(slugs) == total
     assert len(set(slugs)) == total
     assert titles == sorted(titles)
 
 
-async def test_total_count_matches_full_walk(client):
-    slugs, _titles, total = await _walk_all_albums(client, page_size=50)
+async def test_total_count_matches_full_walk(authed_client):
+    slugs, _titles, total = await _walk_all_albums(authed_client, page_size=50)
     assert len(slugs) == total
-    single = await _gql(client, ALBUMS_PAGE, first=1)
+    single = await _gql(authed_client, ALBUMS_PAGE, first=1)
     assert single["data"]["albums"]["totalCount"] == total
 
 
-async def test_last_page_then_empty_tail(client):
+async def test_last_page_then_empty_tail(authed_client):
     # walk to the final page and capture its endCursor
     after = None
     conn = None
     while True:
-        conn = (await _gql(client, ALBUMS_PAGE, first=50, after=after))["data"]["albums"]
+        conn = (await _gql(authed_client, ALBUMS_PAGE, first=50, after=after))["data"]["albums"]
         if not conn["pageInfo"]["hasNextPage"]:
             break
         after = conn["pageInfo"]["endCursor"]
@@ -104,7 +104,7 @@ async def test_last_page_then_empty_tail(client):
     assert conn["pageInfo"]["hasNextPage"] is False
 
     tail = (
-        await _gql(client, ALBUMS_PAGE, first=50, after=conn["pageInfo"]["endCursor"])
+        await _gql(authed_client, ALBUMS_PAGE, first=50, after=conn["pageInfo"]["endCursor"])
     )["data"]["albums"]
     assert tail["edges"] == []
     assert tail["pageInfo"]["hasNextPage"] is False
@@ -112,14 +112,14 @@ async def test_last_page_then_empty_tail(client):
     assert tail["pageInfo"]["startCursor"] is None
 
 
-async def test_malformed_after_cursor_errors(client):
-    body = await _gql(client, ALBUMS_PAGE, first=2, after="not-a-real-cursor")
+async def test_malformed_after_cursor_errors(authed_client):
+    body = await _gql(authed_client, ALBUMS_PAGE, first=2, after="not-a-real-cursor")
     assert "errors" in body
     assert "Invalid 'after' cursor" in body["errors"][0]["message"]
 
 
-async def test_first_over_cap_is_clamped(client):
-    body = await _gql(client, ALBUMS_PAGE, first=100_000)
+async def test_first_over_cap_is_clamped(authed_client):
+    body = await _gql(authed_client, ALBUMS_PAGE, first=100_000)
     assert "errors" not in body, body
     conn = body["data"]["albums"]
     assert len(conn["edges"]) == min(conn["totalCount"], 100)
@@ -132,18 +132,18 @@ async def test_first_over_cap_is_clamped(client):
         'query { albums(before: "x") { edges { node { slug } } } }',
     ],
 )
-async def test_backward_pagination_is_rejected(client, query):
-    body = await _gql(client, query)
+async def test_backward_pagination_is_rejected(authed_client, query):
+    body = await _gql(authed_client, query)
     assert "errors" in body
     assert "Backward pagination" in body["errors"][0]["message"]
 
 
-async def test_node_refetch_round_trips(client):
-    edge = (await _gql(client, ALBUMS_PAGE, first=1))["data"]["albums"]["edges"][0]
+async def test_node_refetch_round_trips(authed_client):
+    edge = (await _gql(authed_client, ALBUMS_PAGE, first=1))["data"]["albums"]["edges"][0]
     gid = edge["node"]["id"]
     slug = edge["node"]["slug"]
     body = await _gql(
-        client,
+        authed_client,
         "query ($id: ID!) { node(id: $id) { __typename ... on Album { slug } } }",
         id=gid,
     )
@@ -164,14 +164,14 @@ query ($first: Int, $after: String) {
 """
 
 
-async def test_album_items_are_paginated(client):
-    page1 = (await _gql(client, ALBUM_ITEMS_PAGE, first=2))["data"]["album"]["items"]
+async def test_album_items_are_paginated(authed_client):
+    page1 = (await _gql(authed_client, ALBUM_ITEMS_PAGE, first=2))["data"]["album"]["items"]
     assert page1["totalCount"] == 4
     assert len(page1["edges"]) == 2
     assert page1["pageInfo"]["hasNextPage"] is True
 
     page2 = (
-        await _gql(client, ALBUM_ITEMS_PAGE, first=2, after=page1["pageInfo"]["endCursor"])
+        await _gql(authed_client, ALBUM_ITEMS_PAGE, first=2, after=page1["pageInfo"]["endCursor"])
     )["data"]["album"]["items"]
     assert len(page2["edges"]) == 2
     assert page2["pageInfo"]["hasNextPage"] is False

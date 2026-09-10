@@ -7,6 +7,7 @@ stays a pure query-against-seed suite with no filesystem writes.
 import uuid
 
 import pytest
+from conftest import signed
 from PIL import Image
 from sqlalchemy import select
 
@@ -18,8 +19,8 @@ from miya_server.media import ingest
 pytestmark = pytest.mark.usefixtures("seeded_db")
 
 
-async def _gql(client, query, **variables):
-    response = await client.post(
+async def _gql(authed_client, query, **variables):
+    response = await authed_client.post(
         "/graphql", json={"query": query, "variables": variables or {}}
     )
     body = response.json()
@@ -42,7 +43,7 @@ query ($id: ID!) {
 """
 
 
-async def test_author_portrait_flows_through_graphql(client, tmp_path, monkeypatch):
+async def test_author_portrait_flows_through_graphql(authed_client, tmp_path, monkeypatch):
     settings_override = Settings(media_root=tmp_path / "media_root")
     monkeypatch.setattr(ingest, "get_settings", lambda: settings_override)
     monkeypatch.setattr("miya_server.media.router.get_settings", lambda: settings_override)
@@ -52,7 +53,7 @@ async def test_author_portrait_flows_through_graphql(client, tmp_path, monkeypat
     )
     await ingest.run(tmp_path)
 
-    data = await _gql(client, RADIOHEAD_AUTHOR_ID)
+    data = await _gql(authed_client, RADIOHEAD_AUTHOR_ID)
     author_id = next(
         i["author"]["id"]
         for i in data["section"]["items"]
@@ -65,13 +66,14 @@ async def test_author_portrait_flows_through_graphql(client, tmp_path, monkeypat
         ).scalar_one().profile_media_file_id
 
     try:
-        node = (await _gql(client, AUTHOR_IMAGE_NODE, id=author_id))["node"]
-        assert node["imageUrl"].endswith(f"/media/{file_id}")
-        assert node["thumbnailUrl"].endswith(f"/media/{file_id}/thumb")
+        node = (await _gql(authed_client, AUTHOR_IMAGE_NODE, id=author_id))["node"]
+        # Signed now: the path is still the contract, the query carries exp+sig.
+        assert f"/media/{file_id}?" in node["imageUrl"]
+        assert f"/media/{file_id}/thumb?" in node["thumbnailUrl"]
 
         # Both URLs are live (path portion served by our own media router).
-        assert (await client.get(f"/media/{file_id}")).status_code == 200
-        thumb = await client.get(f"/media/{file_id}/thumb")
+        assert (await authed_client.get(signed(f"/media/{file_id}"))).status_code == 200
+        thumb = await authed_client.get(signed(f"/media/{file_id}/thumb"))
         assert thumb.status_code == 200
         assert thumb.headers["content-type"] == "image/webp"
     finally:

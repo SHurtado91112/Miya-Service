@@ -1,5 +1,6 @@
 import strawberry
 from strawberry import relay
+from strawberry.permission import PermissionExtension
 
 from miya_server.graphql.pagination import (
     build_connection,
@@ -8,6 +9,7 @@ from miya_server.graphql.pagination import (
     encode_cursor,
     reject_backward,
 )
+from miya_server.graphql.permissions import IsAuthenticated
 from miya_server.graphql.types.album import Album, AlbumConnection, build_album
 from miya_server.graphql.types.author import build_author
 from miya_server.graphql.types.media_item import build_media_entry_map
@@ -17,6 +19,7 @@ from miya_server.graphql.types.search import (
     SearchResult,
 )
 from miya_server.graphql.types.section import Section, build_section_entries
+from miya_server.graphql.types.user import User, build_user
 from miya_server.repositories import albums as albums_repo
 from miya_server.repositories import authors as authors_repo
 from miya_server.repositories import media_items as media_items_repo
@@ -68,15 +71,31 @@ async def _hydrate_search_rows(
 
 @strawberry.type
 class Query:
-    node: relay.Node = relay.node()
+    # The permission is passed as an explicit extension rather than via
+    # `permission_classes=`, which would land it *inside* NodeExtension:
+    # relay.node() appends its own extension after any it is given, and the
+    # inner permission wrapper then returns NodeExtension's coroutine without
+    # awaiting it -- surfacing as "Abstract type 'Node' must resolve to an
+    # Object type". Passed this way it wraps the node resolver instead.
+    node: relay.Node = relay.node(
+        extensions=[PermissionExtension([IsAuthenticated()], use_directives=False)]
+    )
 
     @strawberry.field
+    def viewer(self, info: strawberry.Info) -> User | None:
+        """The signed-in user, or null when signed out. Ungated on purpose:
+        it is how a client asks 'is my token still good?' without having to
+        provoke an error."""
+        db_user = info.context.viewer
+        return build_user(db_user) if db_user else None
+
+    @strawberry.field(permission_classes=[IsAuthenticated])
     async def sections(self, info: strawberry.Info) -> list[Section]:
         session = info.context.session
         db_sections = await sections_repo.list_sections(session)
         return [await _build_section(session, db_section) for db_section in db_sections]
 
-    @strawberry.field
+    @strawberry.field(permission_classes=[IsAuthenticated])
     async def section(self, info: strawberry.Info, slug: str) -> Section | None:
         session = info.context.session
         db_section = await sections_repo.get_section_by_slug(session, slug)
@@ -84,7 +103,7 @@ class Query:
             return None
         return await _build_section(session, db_section)
 
-    @strawberry.field
+    @strawberry.field(permission_classes=[IsAuthenticated])
     async def albums(
         self,
         info: strawberry.Info,
@@ -119,13 +138,13 @@ class Query:
             node=build_album,
         )
 
-    @strawberry.field
+    @strawberry.field(permission_classes=[IsAuthenticated])
     async def album(self, info: strawberry.Info, slug: str) -> Album | None:
         session = info.context.session
         db_album = await albums_repo.get_album_by_slug(session, slug)
         return build_album(db_album) if db_album else None
 
-    @strawberry.field
+    @strawberry.field(permission_classes=[IsAuthenticated])
     async def search(
         self,
         info: strawberry.Info,

@@ -3,6 +3,7 @@ import uuid
 from pathlib import Path
 
 import pytest
+from conftest import signed
 from PIL import Image
 from sqlalchemy import select
 
@@ -30,7 +31,7 @@ def _override_settings(monkeypatch, media_root: Path) -> None:
 
 
 async def test_unknown_media_file_returns_404(client):
-    response = await client.get(f"/media/{uuid.uuid4()}")
+    response = await client.get(signed(f"/media/{uuid.uuid4()}"))
     assert response.status_code == 404
 
 
@@ -54,7 +55,7 @@ async def test_ingest_then_serve_image(client, tmp_path, monkeypatch):
         assert file_id is not None
 
     try:
-        response = await client.get(f"/media/{file_id}")
+        response = await client.get(signed(f"/media/{file_id}"))
         assert response.status_code == 200
         assert response.headers["content-type"].startswith("image/")
     finally:
@@ -113,11 +114,11 @@ async def test_ingest_generates_thumbnail_and_serves_it(client, tmp_path, monkey
         assert max(media_file.thumbnail_width, media_file.thumbnail_height) == 512
 
     try:
-        full = await client.get(f"/media/{file_id}")
+        full = await client.get(signed(f"/media/{file_id}"))
         assert full.status_code == 200
         assert full.headers["content-type"] == "image/jpeg"
 
-        thumb = await client.get(f"/media/{file_id}/thumb")
+        thumb = await client.get(signed(f"/media/{file_id}/thumb"))
         assert thumb.status_code == 200
         assert thumb.headers["content-type"] == "image/webp"
         assert thumb.headers["cache-control"] == "public, max-age=31536000, immutable"
@@ -147,7 +148,7 @@ async def test_thumb_endpoint_falls_back_to_original_when_no_thumbnail(
         assert media_file.thumbnail_relative_path is None
 
     try:
-        thumb = await client.get(f"/media/{file_id}/thumb")
+        thumb = await client.get(signed(f"/media/{file_id}/thumb"))
         assert thumb.status_code == 200
         assert thumb.headers["content-type"] == "image/jpeg"  # served the original
     finally:
@@ -172,8 +173,8 @@ async def test_ingest_author_portrait_by_prefixed_slug(client, tmp_path, monkeyp
         assert media_file.thumbnail_relative_path is not None
 
     try:
-        assert (await client.get(f"/media/{file_id}")).status_code == 200
-        thumb = await client.get(f"/media/{file_id}/thumb")
+        assert (await client.get(signed(f"/media/{file_id}"))).status_code == 200
+        thumb = await client.get(signed(f"/media/{file_id}/thumb"))
         assert thumb.status_code == 200
         assert thumb.headers["content-type"] == "image/webp"
         assert max(Image.open(io.BytesIO(thumb.content)).size) == 512

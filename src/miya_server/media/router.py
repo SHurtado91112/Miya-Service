@@ -1,6 +1,6 @@
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import FileResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from miya_server.config import get_settings
 from miya_server.db.base import get_session
 from miya_server.db.models import MediaFile
+from miya_server.media.storage import verify_signature
 
 router = APIRouter()
 
@@ -15,10 +16,28 @@ router = APIRouter()
 _IMMUTABLE_CACHE = {"Cache-Control": "public, max-age=31536000, immutable"}
 
 
+def _require_signature(request: Request) -> None:
+    """Reject anything we did not sign.
+
+    These bytes are the whole library, and the clients that fetch them
+    (AVPlayer, AsyncImage) cannot send an Authorization header -- so the
+    signature in the query string is the only thing standing between a
+    stranger on the network and every song and photo."""
+    exp = request.query_params.get("exp")
+    sig = request.query_params.get("sig")
+    if not exp or not sig or not exp.isdigit():
+        raise HTTPException(status_code=403, detail="Missing or malformed media signature")
+    if not verify_signature(request.url.path, int(exp), sig):
+        raise HTTPException(status_code=403, detail="Invalid or expired media signature")
+
+
 @router.get("/{file_id}")
 async def get_media_file(
-    file_id: UUID, session: AsyncSession = Depends(get_session)  # noqa: B008
+    request: Request,
+    file_id: UUID,
+    session: AsyncSession = Depends(get_session),  # noqa: B008
 ) -> FileResponse:
+    _require_signature(request)
     result = await session.execute(select(MediaFile).where(MediaFile.id == file_id))
     media_file = result.scalar_one_or_none()
     if media_file is None:
@@ -40,12 +59,15 @@ async def get_media_file(
 
 @router.get("/{file_id}/thumb")
 async def get_media_thumbnail(
-    file_id: UUID, session: AsyncSession = Depends(get_session)  # noqa: B008
+    request: Request,
+    file_id: UUID,
+    session: AsyncSession = Depends(get_session),  # noqa: B008
 ) -> FileResponse:
     """The generated WebP thumbnail for an image. Falls back to the original
     bytes when a row has no thumbnail yet (pre-feature rows before
     `backfill-thumbnails` runs, or a source Pillow couldn't decode) so a
     `thumbnailUrl` handed to a client is never a broken link."""
+    _require_signature(request)
     result = await session.execute(select(MediaFile).where(MediaFile.id == file_id))
     media_file = result.scalar_one_or_none()
     if media_file is None:
