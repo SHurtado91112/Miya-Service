@@ -112,12 +112,46 @@ See the plan doc above for the full rationale. Summary:
   SQLAlchemy; batches song/photo/album lookups per section or album instead of
   querying per item.
 - `src/miya_server/media/` — `router.py` (`GET /media/{file_id}`), `storage.py`
-  (media URL construction), `ingest.py` (the `ingest-media` CLI).
+  (media URL construction + HMAC signing), `ingest.py` (the `ingest-media` CLI).
+- `src/miya_server/auth/` — `google.py` (authorization-code exchange +
+  `id_token` verification against Google's JWKS), `tokens.py` (our HS256 access
+  JWT and the rotating, hashed refresh tokens), `errors.py`.
+
+## Authentication
+
+Google SSO. The iOS app runs the PKCE flow in a system browser sheet and sends
+us the authorization code; we exchange it with Google, verify the `id_token`
+(signature via JWKS, plus `iss` / `aud` / `exp` / `nonce` / `email_verified`),
+upsert a `users` row, and return our own credentials.
+
+Identity is keyed on Google's `sub` claim, never on email — an address can be
+changed by its owner, and a Workspace address can be deleted and reissued to a
+different person, so matching on email would hand that second person the first
+person's library.
+
+Access tokens are short-lived HS256 JWTs (15 min default). Refresh tokens are
+opaque, stored only as a SHA-256 hash, single-use, and rotated on redemption.
+Presenting an already-spent refresh token means it leaked, so the whole token
+family is revoked (RFC 9700 §4.14.2) — and that revocation is committed before
+the error is raised, or it would roll back with the failed request.
+
+Every `Query` field requires a bearer token and returns a genuine **HTTP 401**
+(not Strawberry's default 200 + `errors[]`), because the iOS client keys its
+silent refresh-and-retry off the status code. `viewer` and the three auth
+mutations are the exceptions — you cannot require a session to create one.
+
+`/media` bytes are guarded by **signed URLs** rather than the bearer token:
+`AVPlayer` and `AsyncImage` fetch them directly and cannot attach headers.
+`storage.py` appends an HMAC over the path plus an expiry, bucketed to the hour
+so URLs stay stable and the `immutable` cache header keeps working.
+
+Set `GOOGLE_IOS_CLIENT_ID`, `JWT_SECRET`, and `MEDIA_URL_SECRET` in `.env`
+(see `.env.example`; generate the secrets with `openssl rand -hex 32`).
 
 ## Not yet built
 
-Many-to-many album membership (skipped until the library needs it), album
-authorship (`Album.author` — only songs/photos carry `author_id` today), and
-mutations/auth (deferred until real auth is designed). `sections` /
-`Section.items` are still unpaginated — the curated section content is
-intentionally bounded.
+Many-to-many album membership (skipped until the library needs it) and album
+authorship (`Album.author` — only songs/photos carry `author_id` today).
+`sections` / `Section.items` are still unpaginated — the curated section content
+is intentionally bounded. Sign in with Apple is not implemented; see the
+Guideline 4.8 note in the iOS repo's CLAUDE.md.

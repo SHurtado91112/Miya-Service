@@ -19,8 +19,8 @@ query {
 """
 
 
-async def test_sections_returns_music_and_photos(client):
-    response = await client.post("/graphql", json={"query": _SECTIONS_QUERY})
+async def test_sections_returns_music_and_photos(authed_client):
+    response = await authed_client.post("/graphql", json={"query": _SECTIONS_QUERY})
     assert response.status_code == 200
     body = response.json()
     assert "errors" not in body, body
@@ -36,8 +36,8 @@ async def test_sections_returns_music_and_photos(client):
     assert "In Rainbows" in album_titles
 
 
-async def test_section_folds_album_members(client):
-    response = await client.post("/graphql", json={"query": _SECTIONS_QUERY})
+async def test_section_folds_album_members(authed_client):
+    response = await authed_client.post("/graphql", json={"query": _SECTIONS_QUERY})
     body = response.json()
     assert "errors" not in body, body
     music_items = {s["slug"]: s for s in body["data"]["sections"]}["music"]["items"]
@@ -50,7 +50,7 @@ async def test_section_folds_album_members(client):
     assert "weird-fishes" not in song_slugs
 
 
-async def test_section_by_slug(client):
+async def test_section_by_slug(authed_client):
     query = """
     query {
       section(slug: "photos") {
@@ -59,16 +59,16 @@ async def test_section_by_slug(client):
       }
     }
     """
-    response = await client.post("/graphql", json={"query": query})
+    response = await authed_client.post("/graphql", json={"query": query})
     body = response.json()
     assert "errors" not in body, body
     assert body["data"]["section"]["title"] == "Photos"
     assert len(body["data"]["section"]["items"]) > 0
 
 
-async def test_unknown_section_returns_null(client):
+async def test_unknown_section_returns_null(authed_client):
     query = 'query { section(slug: "does-not-exist") { title } }'
-    response = await client.post("/graphql", json={"query": query})
+    response = await authed_client.post("/graphql", json={"query": query})
     body = response.json()
     assert "errors" not in body, body
     assert body["data"]["section"] is None

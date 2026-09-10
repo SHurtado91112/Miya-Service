@@ -35,3 +35,22 @@ async def seeded_db():
 async def db_session() -> AsyncSession:
     async with async_session_factory() as session:
         yield session
+
+
+@pytest_asyncio.fixture
+async def auth_user(seeded_db):
+    """A persisted user to authenticate as. Get-or-create so the session-scoped
+    seed can be reused across tests without unique-constraint churn."""
+    from sqlalchemy import select
+
+    from miya_server.db.models import User
+
+    async with async_session_factory() as session:
+        existing = await session.execute(select(User).where(User.google_sub == "test-sub"))
+        user = existing.scalar_one_or_none()
+        if user is None:
+            user = User(google_sub="test-sub", email="tester@example.com", name="Tester")
+            session.add(user)
+            await session.commit()
+        await session.refresh(user)
+        return user

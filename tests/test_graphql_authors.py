@@ -7,8 +7,8 @@ import pytest
 pytestmark = pytest.mark.usefixtures("seeded_db")
 
 
-async def _gql(client, query, **variables):
-    response = await client.post(
+async def _gql(authed_client, query, **variables):
+    response = await authed_client.post(
         "/graphql", json={"query": query, "variables": variables or {}}
     )
     body = response.json()
@@ -28,8 +28,8 @@ query {
 """
 
 
-async def test_song_exposes_its_author(client):
-    data = await _gql(client, SONG_AUTHOR)
+async def test_song_exposes_its_author(authed_client):
+    data = await _gql(authed_client, SONG_AUTHOR)
     songs = [i for i in data["section"]["items"] if i["__typename"] == "Song"]
     radiohead_songs = [s for s in songs if s["author"] and s["author"]["slug"] == "radiohead"]
     assert radiohead_songs
@@ -49,8 +49,8 @@ query {
 """
 
 
-async def test_photo_has_the_synthetic_photographer(client):
-    data = await _gql(client, PHOTO_AUTHOR)
+async def test_photo_has_the_synthetic_photographer(authed_client):
+    data = await _gql(authed_client, PHOTO_AUTHOR)
     photos = [i for i in data["section"]["items"] if i["__typename"] == "Photo"]
     assert photos
     assert all(p["author"]["slug"] == "steven-hurtado" for p in photos)
@@ -78,27 +78,27 @@ query ($id: ID!, $first: Int, $after: String) {
 """
 
 
-async def _radiohead_author_id(client) -> str:
-    data = await _gql(client, SONG_AUTHOR)
+async def _radiohead_author_id(authed_client) -> str:
+    data = await _gql(authed_client, SONG_AUTHOR)
     for item in data["section"]["items"]:
         if item["__typename"] == "Song" and item["author"] and item["author"]["slug"] == "radiohead":
             return item["author"]["id"]
     raise AssertionError("no Radiohead song with an author in the music section")
 
 
-async def test_author_without_portrait_has_null_image_urls(client):
+async def test_author_without_portrait_has_null_image_urls(authed_client):
     # Seeded authors carry no portrait, so both URL fields resolve to null
-    # (the field still exists on the type -- schema contract for the client).
-    author_id = await _radiohead_author_id(client)
-    node = (await _gql(client, AUTHOR_NODE, id=author_id, first=1))["node"]
+    # (the field still exists on the type -- schema contract for the authed_client).
+    author_id = await _radiohead_author_id(authed_client)
+    node = (await _gql(authed_client, AUTHOR_NODE, id=author_id, first=1))["node"]
     assert node["imageUrl"] is None
     assert node["thumbnailUrl"] is None
 
 
-async def test_author_node_refetch_and_items_pagination(client):
-    author_id = await _radiohead_author_id(client)
+async def test_author_node_refetch_and_items_pagination(authed_client):
+    author_id = await _radiohead_author_id(authed_client)
 
-    page1 = (await _gql(client, AUTHOR_NODE, id=author_id, first=3))["node"]
+    page1 = (await _gql(authed_client, AUTHOR_NODE, id=author_id, first=3))["node"]
     assert page1["__typename"] == "Author"
     assert page1["slug"] == "radiohead"
     assert page1["items"]["totalCount"] >= 5  # In Rainbows + loose Radiohead tracks
@@ -107,7 +107,7 @@ async def test_author_node_refetch_and_items_pagination(client):
 
     page2 = (
         await _gql(
-            client,
+            authed_client,
             AUTHOR_NODE,
             id=author_id,
             first=3,
@@ -133,9 +133,9 @@ query ($id: ID!) {
 """
 
 
-async def test_author_exposes_its_albums(client):
-    author_id = await _radiohead_author_id(client)
-    node = (await _gql(client, AUTHOR_ALBUMS, id=author_id))["node"]
+async def test_author_exposes_its_albums(authed_client):
+    author_id = await _radiohead_author_id(authed_client)
+    node = (await _gql(authed_client, AUTHOR_ALBUMS, id=author_id))["node"]
     slugs = [a["slug"] for a in node["albums"]]
     assert "in-rainbows" in slugs
     assert slugs == sorted(slugs)  # ordered by (title, id)
@@ -143,9 +143,9 @@ async def test_author_exposes_its_albums(client):
         assert album["author"]["slug"] == "radiohead"
 
 
-async def test_author_items_reject_backward_pagination(client):
-    author_id = await _radiohead_author_id(client)
-    response = await client.post(
+async def test_author_items_reject_backward_pagination(authed_client):
+    author_id = await _radiohead_author_id(authed_client)
+    response = await authed_client.post(
         "/graphql",
         json={
             "query": AUTHOR_NODE.replace("$after: String", "$after: String, $last: Int").replace(
